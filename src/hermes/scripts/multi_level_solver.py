@@ -9,10 +9,6 @@ Created on Tue Aug 26 17:27:01 2025
 
 
 
-
-
-
-
 import matplotlib.pyplot as plt
 import cupy as cp
 import cupyx.scipy.sparse.linalg as spla
@@ -36,23 +32,13 @@ from hermes.kenrels.interp import  trilinear_interpolation
 
 
 
-
-
-
-
-
 def len_dim(x): return x *  phys.len_scale      # [m]
 def len_um(x): return x *  phys.len_scale * 1e6    # [um]
 def shape_back_3d(u, nx, ny, nz): return cp.reshape(u, (nx, ny, nz), order='F')
 def temp_dim(u): return u * phys.deltaT + phys.Ts  # [K]
 def gaussian2d(x, y, sigma,x00,y00): return two * phys.n1 * cp.exp(-((x-x00)**two + (y-y00)**two) / (two * sigma**two)) 
     
-def G2L_3D_arr(idxx, nx, ny, nz): # when idxx is an array
-    k = idxx // (nx*ny)
-    idx_z = idxx - k*nx*ny
-    j = idx_z // nx
-    i = idx_z - j*nx
-    return i, j , k
+
 
 def mv_wrapper_lin(v):
     mv_level3_dirichlet[blocks_per_grid_lin,threads_per_block_lin](v, d_result_lin, nx_lin, ny_lin, nz_lin, h_linsq, h_linsq, h_linsq, dt_lin05, n2, u0, h_lin, two)
@@ -79,19 +65,6 @@ def sparse_cg(A, b, u0, TOL, P, maxit):
       return x,status,num_iters
           
 
-def plot_temperature4(t_vals, x1, x2 , x_ind, tempdimensional, iii, phys, simu_linear, title = 'orig'):
-        Zz, Yy = cp.meshgrid(x2,x1)
-        fig, ax = plt.subplots()
-        h1 = ax.pcolormesh(Yy, Zz, tempdimensional[x_ind,:,:], cmap='hot') #z,y,x
-        h1.set_clim(300, 1200)
-        ax.contour(Yy, Zz,tempdimensional[x_ind,:,:], [phys.Tl])
-        ax.set_xlabel('y [m]')
-        ax.set_ylabel('z [m]')
-        tit1 =  't = {:.2e}'.format(t_vals[iii]); tit2 = title
-        tit3 = tit1 + tit2
-        ax.set_title(tit3)
-        fig.colorbar(h1)
-        plt.show()
         
 
 ### FUNCS FOR MOVING ###
@@ -153,79 +126,7 @@ def resetx_all(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0
     X_lin[:] = X_lin0.copy()
 
 
-# def xy_index(coord, velocity):
-#     flag = True
-#     cnt_temp  = 1
-#     while flag:
-#         temp_array = coord + velocity*cnt_temp # y_s0 + velocity*cnt_temp
-#         interval_start = coord[0]
-#         interval_end = coord[-1]
 
-#         outside_interval = (temp_array < interval_start) | (temp_array > interval_end)
-        
-#         if cp.any(outside_interval):
-#             index_coord = cp.argmax(outside_interval)            
-#             flag = False
-#             return index_coord
-            
-#         else:
-#             cnt_temp += 1
-
-#         if cnt_temp > len(t_vals_lin):
-#             return None
-        
-# def xy_index_negative(coord, velocity):
-#     flag = True
-#     cnt_temp  = 1
-#     while flag:
-#         temp_array = coord - velocity*cnt_temp # y_s0 + velocity*cnt_temp
-#         interval_start = coord[0]
-#         interval_end = coord[-1]
-
-#         outside_interval = (temp_array < interval_start) | (temp_array > interval_end)
-        
-#         if cp.any(outside_interval):
-#             index_coord = cp.argmin(outside_interval)            
-#             flag = False
-#             return index_coord
-            
-#         else:
-#             cnt_temp += 1
-
-#         if cnt_temp > len(t_vals_lin):
-#             return None
-   
-'''     
-def x_index(x, velocity):
-    flag = True
-    cnt_temp  = 1
-    while flag:
-        temp_array_x = x + velocity*cnt_temp # x_s0 + velocity*cnt_temp
-        interval_startx = x[0]
-        interval_endx = x[-1]
-
-        outside_intervalx = (temp_array_x < interval_startx) | (temp_array_x > interval_endx)
-        
-        if cp.any(outside_intervalx):
-            index_x = cp.argmax(outside_intervalx)            
-            flag = False
-            return index_x, cnt_temp
-            
-        else:
-            cnt_temp += 1
-
-        
-        if cnt_temp > len(t_vals_lin):
-            return None
-
-'''
-
-
-# def Index_3D_to_1D(x_ind0, x_ind1, y_ind0, yind1,  array):
-#     # slice_3d = array[x_ind0:x_ind1+1, y_ind0:yind1+1, z_ind0:zind1+1]
-#     slice_3d = array[x_ind0:x_ind1+1, y_ind0:yind1+1, 0:]
-#     slice_1d = slice_3d.ravel(order = 'F')
-#     return slice_1d
 
 
 def update_after_movementy2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx, ny_in, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  ny_out, uout, one, val3, slice_1d_in, slice_1d_out, index_y, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):
@@ -277,40 +178,7 @@ def update_after_movementy2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = uout
 
-def update_after_movementy(x, y, z, val, val2,  nx_old, ny_old, nz_old, hxval, hyval, hzval, xold, yold, zold,  xold2, yold2, zold2,  nx_old2, ny_old2, nz_old2,  hxval2, hyval2, hzval2, slice_1d_in, slice_1d_out, index_y):
-    val3 = val.copy()
-    uin = cp.zeros_like(val[slice_1d_in], dtype = cp.float64)
-    uout = cp.zeros_like(val[slice_1d_out], dtype = cp.float64)
-    
-    xin = x[0:]
-    yin = y[0:index_y]
-    zin = z[0:]
-    
-    xout = x[0:]
-    yout = y[index_y:]
-    zout = z[0:]
-   
-    nx_in = int(xin.shape[0])
-    ny_in = int(yin.shape[0])
-    nz_in = int(zin.shape[0])
 
-    nx_out = int(xout.shape[0])
-    ny_out = int(yout.shape[0])
-    nz_out = int(zout.shape[0])
-
-    threads_per_block_in = 128
-    blocks_per_grid_in =  (nx_in*ny_in*nz_in + (threads_per_block_in-1)) // threads_per_block_in
-
-    threads_per_block_out = 128
-    blocks_per_grid_out =  (nx_out*ny_out*nz_out + (threads_per_block_out-1)) // threads_per_block_out
-
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, yin, zin, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,float(xold[0]), float(yold[0]), float(zold[0]), nx_in, ny_in, nz_in, uin, one)
-    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, yout, zout, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, float(xold2[0]), float(yold2[0]), float(zold2[0]), nx_out, ny_out, nz_out, uout, one)
-
-    val3[slice_1d_in] = uin
-    val3[slice_1d_out] = uout
-
-    return val3
 
 def update_after_movementx2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx_in, ny, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  nx_out, uout, one, val3, slice_1d_in, slice_1d_out, index_x, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):
     '''
@@ -361,46 +229,6 @@ def update_after_movementx2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval
     val3[slice_1d_out] = uout
 
 
-def update_after_movementx(x, y, z, val, val2,  nx_old, ny_old, nz_old, hxval, hyval, hzval, xold, yold, zold,  xold2, yold2, zold2,  nx_old2, ny_old2, nz_old2,  hxval2, hyval2, hzval2, slice_1d_in, slice_1d_out, index_x):
-   
-    val3 = val.copy()
-    uin = cp.zeros_like(val[slice_1d_in], dtype = cp.float64)
-    uout = cp.zeros_like(val[slice_1d_out], dtype = cp.float64)  
-    
-    xin = x[0:index_x]
-    yin = y[0:]
-    zin = z[0:]
-    
-    xout = x[index_x:]
-    yout = y[0:]
-    zout = z[0:]
-    
-    nx_in = int(xin.shape[0])
-    ny_in = int(yin.shape[0])
-    nz_in = int(zin.shape[0])
-
-    nx_out = int(xout.shape[0])
-    ny_out = int(yout.shape[0])
-    nz_out = int(zout.shape[0])
-
-    threads_per_block_in = 128
-    blocks_per_grid_in =  (nx_in*ny_in*nz_in + (threads_per_block_in-1)) // threads_per_block_in
-
-    threads_per_block_out = 128
-    blocks_per_grid_out =  (nx_out*ny_out*nz_out + (threads_per_block_out-1)) // threads_per_block_out    
-
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, yin, zin, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, float(xold[0]), float(yold[0]), float(zold[0]), nx_in, ny_in, nz_in, uin, one)    
-    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, yout, zout, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, float(xold2[0]), float(yold2[0]), float(zold2[0]), nx_out, ny_out, nz_out, uout, one)
-
-    val3[slice_1d_in] = uin
-    val3[slice_1d_out] = uout
-
-    return val3
-
-
-
-
-
 def update_after_movement_level3y_2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx, ny_in, nz, uin,  slice_1d_in, slice_1d_out, index_y, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):
     '''
     x,y,z: New coords after movement
@@ -417,31 +245,6 @@ def update_after_movement_level3y_2(x, y, z, val, nx_old, ny_old, nz_old, hxval,
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = u0
 
-
-def update_after_movement_level3y(x, y, z, val, val2,  nx_old, ny_old, nz_old, hxval, hyval, hzval, xold, yold, zold,  xold2, yold2, zold2,  nx_old2, ny_old2, nz_old2,  hxval2, hyval2, hzval2, slice_1d_in, slice_1d_out, index_y, u0):
-    val3 = val.copy()
-    uin = cp.zeros_like(val[slice_1d_in], dtype = cp.float64)
-    
-    xin = x[0:]
-    yin = y[0:index_y]
-    zin = z[0:]
-   
-
-    nx_in = int(xin.shape[0])
-    ny_in = int(yin.shape[0])
-    nz_in = int(zin.shape[0])
-
-
-    threads_per_block_in = 128
-    blocks_per_grid_in =  (nx_in*ny_in*nz_in + (threads_per_block_in-1)) // threads_per_block_in
-
-
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, yin, zin, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, float(xold[0]), float(yold[0]), float(zold[0]), nx_in, ny_in, nz_in, uin, one)
-
-    val3[slice_1d_in] = uin
-    val3[slice_1d_out] = u0
-
-    return val3
 
 def update_after_movement_level3y_2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx, ny_in, nz, uin,  slice_1d_in, slice_1d_out, index_y, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):
     '''
@@ -491,115 +294,11 @@ def update_after_movement_level3x_2_negative(x, y, z, val, nx_old, ny_old, nz_ol
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = u0
 
-def update_after_movement_level3x(x, y, z, val, val2,  nx_old, ny_old, nz_old, hxval, hyval, hzval, xold, yold, zold,  xold2, yold2, zold2,  nx_old2, ny_old2, nz_old2,  hxval2, hyval2, hzval2, slice_1d_in, slice_1d_out, index_x, u0):
-    
-    val3 = val.copy()
-    uin = cp.zeros_like(val[slice_1d_in], dtype = cp.float64)
-    
-
-    xin = x[0:index_x]
-    yin = y[0:]
-    zin = z[0:]
-    
-    nx_in = int(xin.shape[0])
-    ny_in = int(yin.shape[0])
-    nz_in = int(zin.shape[0])
-
-    threads_per_block_in = 128
-    blocks_per_grid_in =  (nx_in*ny_in*nz_in + (threads_per_block_in-1)) // threads_per_block_in
-    
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, yin, zin, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, float(xold[0]), float(yold[0]), float(zold[0]), nx_in, ny_in, nz_in, uin, one)
-    
-
-    val3[slice_1d_in] = uin
-    val3[slice_1d_out] = u0
-
-    return val3
-
-def update_after_movement_level3x_negative(x, y, z, val, val2,  nx_old, ny_old, nz_old, hxval, hyval, hzval, xold, yold, zold,  xold2, yold2, zold2,  nx_old2, ny_old2, nz_old2,  hxval2, hyval2, hzval2, slice_1d_in, slice_1d_out, index_x, u0):
-    
-    val3 = val.copy()
-    uin = cp.zeros_like(val[slice_1d_in], dtype = cp.float64)
-    
-
-    xin = x[index_x+1:]
-    yin = y[0:]
-    zin = z[0:]
-    
-    nx_in = int(xin.shape[0])
-    ny_in = int(yin.shape[0])
-    nz_in = int(zin.shape[0])
-
-    threads_per_block_in = 128
-    blocks_per_grid_in =  (nx_in*ny_in*nz_in + (threads_per_block_in-1)) // threads_per_block_in
-    
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, yin, zin, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, float(xold[0]), float(yold[0]), float(zold[0]), nx_in, ny_in, nz_in, uin, one)
-    
-
-    val3[slice_1d_in] = uin
-    val3[slice_1d_out] = u0
-
-    return val3
-
-# def grid_movement_index(coordx, coordy, velocity, nx, ny, nz):
-    
-#     array1 = cp.arange(nx*ny*nz).reshape([nx, ny, nz], order="F")
-#     index_y = xy_index(coordy, velocity)
-#     index_x  = xy_index(coordx, velocity)
-#     index_y_neg  = xy_index_negative(coordy, velocity)
-#     index_x_neg  = xy_index_negative(coordx, velocity)
 
 
-    
-#     slice_1d_in_y = Index_3D_to_1D(x_ind0 = 0, x_ind1 = coordx.shape[0], y_ind0 = 0, yind1 = index_y-1,  array = array1)
-#     slice_1d_out_y = Index_3D_to_1D(x_ind0 = 0, x_ind1 =coordx.shape[0], y_ind0 = index_y, yind1 = coordy.shape[0],  array = array1)
-    
-#     slice_1d_in_x = Index_3D_to_1D(x_ind0 = 0, x_ind1 = index_x-1, y_ind0 = 0, yind1 = coordy.shape[0], array = array1)
-#     slice_1d_out_x = Index_3D_to_1D(x_ind0 = index_x, x_ind1 = coordx.shape[0], y_ind0 = 0, yind1 = coordy.shape[0], array = array1)
-    
-#     slice_1d_in_x_negative = Index_3D_to_1D(x_ind0 = index_x_neg, x_ind1 =  coordx.shape[0], y_ind0 = 0, yind1 = coordy.shape[0], array = array1)
-#     slice_1d_out_x_negative = Index_3D_to_1D(x_ind0 = 0, x_ind1 = index_x_neg-1, y_ind0 = 0, yind1 = coordy.shape[0], array = array1)
-    
-#     slice_1d_in_y_negative = Index_3D_to_1D(x_ind0 = 0, x_ind1 = coordx.shape[0], y_ind0 = index_y_neg, yind1 = coordy.shape[0],  array = array1)
-#     slice_1d_out_y_negative = Index_3D_to_1D(x_ind0 = 0, x_ind1 =coordx.shape[0], y_ind0 = 0, yind1 = index_y_neg-1,  array = array1)
-
-#     return index_y, index_x, index_y_neg, index_x_neg , slice_1d_in_y, slice_1d_out_y, slice_1d_in_x, slice_1d_out_x, slice_1d_in_x_negative, slice_1d_out_x_negative, slice_1d_in_y_negative, slice_1d_out_y_negative
 
 
-# def precompute_for_update(u, nx, ny, nz, y, y_index, x, x_index,  slice_1d_in, slice_1d_out, z):
-    
-#     u_in  = cp.zeros_like(u[slice_1d_in], dtype = float_type)
-#     u_out = cp.zeros_like(u[slice_1d_out], dtype = float_type) #cp.zeros_like(u_s[slice_1d_out], dtype = float_type)
-    
-#     ny_in  = int(y[0:y_index].shape[0])
-#     ny_out = int(y[y_index:].shape[0])
-    
-#     nx_in  = int(x[0:x_index].shape[0])
-#     nx_out  = int(x[x_index:].shape[0])
-    
-#     xoldmin = float_type(x[0].get())
-#     yoldmin = float_type(y[0].get())
-#     zoldmin = float_type(z[0].get())
-    
-#     threads_per_block_in = 128
-#     blocks_per_grid_in =  (nx*ny_in*nz + (threads_per_block_in-1)) // threads_per_block_in
-    
-#     threads_per_block_out = 128
-#     blocks_per_grid_out =  (nx*ny_out*nz + (threads_per_block_out-1)) // threads_per_block_out
-    
-#     threads_per_block_in_x = 128
-#     blocks_per_grid_in_x =  (nx_in*ny*nz + (threads_per_block_in_x-1)) // threads_per_block_in_x
-    
-    
-#     threads_per_block_out_x = 128
-#     blocks_per_grid_out_x =  (nx_out*ny*nz + (threads_per_block_out_x-1)) // threads_per_block_out_x
 
-#     return (u_in, u_out, ny_in, ny_out, nx_in, nx_out,
-#         xoldmin, yoldmin, zoldmin,
-#         blocks_per_grid_in, blocks_per_grid_out,
-#         blocks_per_grid_in_x, blocks_per_grid_out_x,
-#         threads_per_block_in, threads_per_block_out,
-#         threads_per_block_in_x, threads_per_block_out_x)
 
 def update_grid_and_precompute(velocity):
     global index_y_lin, index_x_lin, index_y_lin_neg, index_x_lin_neg
@@ -701,6 +400,7 @@ def update_grid_and_precompute(velocity):
 
     ### Pre-Compute for update ###
 
+### FUNCS FOR MOVING ###
 
 
 
