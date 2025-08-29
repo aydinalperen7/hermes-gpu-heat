@@ -969,442 +969,445 @@ for layers in range(num_layers):
 
 
 
+
  
+for iii, t_val in enumerate(t_vals_lin):
+
+    ttt += dt_lin*phys.time_scale*1e3
+    if velocity != velocity0:
+        velocity0 = velocity
+
+        update_grid_and_precompute(velocity)
+        print('velocity updated at iii = ', iii)
+        print(index_y, 'is index_y')
+        d_u_lin = cuda.to_device(u_lin)
+        d_p_o = cuda.to_device(p_o)
+        d_p_i = cuda.to_device(p_i)
+        d_p_r = cuda.to_device(p_r)
+        d_p_l = cuda.to_device(p_l)
+        d_p_b = cuda.to_device(p_b)
+
+        d_p_o_level2 = cuda.to_device(p_o_level2)
+        d_p_i_level2 = cuda.to_device(p_i_level2)
+        d_p_r_level2 = cuda.to_device(p_r_level2)
+        d_p_l_level2 = cuda.to_device(p_l_level2)
+        d_p_b_level2 = cuda.to_device(p_b_level2)
+
+        d_u_s = cuda.to_device(u_s)
+        d_u_s_level2 = cuda.to_device(u_s_level2)
+
+        d_b_lin = cuda.to_device(b_lin)
+        d_b_s = cuda.to_device(b_s)
+        d_b_s_level2 = cuda.to_device(b_s_level2)
+
+        d_uinte_level2 = cuda.to_device(uinte_level2)
+        d_uinte = cuda.to_device(uinte)
+
+        d_p_o_old = cuda.to_device(p_o_old)
+        d_p_i_old = cuda.to_device(p_i_old)
+        d_p_r_old = cuda.to_device(p_r_old)
+        d_p_l_old = cuda.to_device(p_l_old)
+        d_p_b_old = cuda.to_device(p_b_old)
+
+        d_p_o_old_level2 = cuda.to_device(p_o_old_level2)
+        d_p_i_old_level2 = cuda.to_device(p_i_old_level2)
+        d_p_r_old_level2 = cuda.to_device(p_r_old_level2)
+        d_p_l_old_level2 = cuda.to_device(p_l_old_level2)
+        d_p_b_old_level2 = cuda.to_device(p_b_old_level2)
+
+        d_qs_lin = cuda.to_device(qs_lin)
+        d_qs_s_level2 = cuda.to_device(qs_s_level2)
+        d_qs_s = cuda.to_device(qs_s)
+
+
+        d_x_lin = cuda.to_device(x_lin)
+        d_y_lin = cuda.to_device(y_lin)
+        d_z_lin = cuda.to_device(z_lin)
+
+        d_x_s = cuda.to_device(x_s)
+        d_y_s = cuda.to_device(y_s)
+        d_z_s = cuda.to_device(z_s)
+
+        d_x_s2 = cuda.to_device(x_s2)
+        d_y_s2 = cuda.to_device(y_s2)
+        d_z_s2 = cuda.to_device(z_s2)
+
+        d_x_s_level2 = cuda.to_device(x_s_level2)
+        d_y_s_level2 = cuda.to_device(y_s_level2)
+        d_z_s_level2 = cuda.to_device(z_s_level2)
+
+        d_x_s2_level2 = cuda.to_device(x_s2_level2)
+        d_y_s2_level2 = cuda.to_device(y_s2_level2)
+        d_z_s2_level2 = cuda.to_device(z_s2_level2)
+
+        d_uout_s = cuda.to_device(uout_s)
+        d_uout_s_level2 = cuda.to_device(uout_s_level2)
+
+        d_uin_s = cuda.to_device(uin_s)
+        d_uin_s_level2 = cuda.to_device(uin_s_level2)
+
+        d_u_s_level2_old = cuda.to_device(u_s_level2_old)
+        d_u_s_old = cuda.to_device(u_s_old)
+
+        d_uinteold = cuda.to_device(uinteold)
+        d_uinteold_level2 = cuda.to_device(uinteold_level2)
+
+    if movement==1 and iii and velocity : # means y-movement
+    ### Move the Laser Source ###
+        #print('here = ')
+        y00 += velocity
+    ### Move the Laser Source ###
+    
+    ### Move Grid and update variables  ###
+
+        move_gridy_all(velocity, iii)
+        
+        update_after_movementy2(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_iny, slice_1d_out=slice_1d_outy, index_y=index_y, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)
+        update_after_movementy2(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y, slice_1d_out=slice_1d_out_level2y, index_y=index_y_level2, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)
+        update_after_movement_level3y_2(x=d_x_lin, y=y_lin, z=d_z_lin, val=u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin, hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_liny, slice_1d_out=slice_1d_out_liny, index_y=index_y_lin, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)
+        
+        ### Updated Laser Source ###
+        qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
+        qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
+        qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
+        ### Updated Laser Source ###
+        
+        ### New old mins for update ###
+        yoldmin_s += velocity
+        yoldmin_lin += velocity
+        yoldmin_s_level2 += velocity
+        ### New old mins for update ###
+        
+        ### New min coords for interpolation ###)
+        yminn +=  velocity
+        ymin_level2 += velocity
+        ### New min coords for interpolation ###
+    
+    ### Move Grid and update variables  ###
+    elif  movement == 3 and iii and velocity: 
+        ### Move the Laser Source ###
+            y00 -= velocity
+        ### Move the Laser Source ###
+        
+        ### Move Grid and update variables  ###
+
+            move_gridy_all(-velocity, iii)
+                                            
+            update_after_movementy2_negative(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_iny_negative, slice_1d_out=slice_1d_outy_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)                                                
+            update_after_movementy2_negative(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y_negative, slice_1d_out=slice_1d_out_level2y_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)                                                      
+            update_after_movement_level3y_2_negative(x=d_x_lin, y=y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_liny_negative, slice_1d_out=slice_1d_out_liny_negative, index_y=0, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)            
+
+
+            ### Updated Laser Source ###
+            qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
+            qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
+            qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
+            ### Updated Laser Source ###
+            
+            ### New old mins for update ###
+            yoldmin_s -= velocity
+            yoldmin_lin -= velocity
+            yoldmin_s_level2 -= velocity
+            ### New old mins for update ###
+            
+            ### New min coords for interpolation ###
+            yminn -=  velocity
+            ymin_level2 -= velocity
+            ### New min coords for interpolation ###
+
+        
+    ### Move Grid and update variables###
+    elif not movement and iii and velocity: # means x-movement
+    ### Move the Laser Source ###
+        x00 += velocity
+    ### Move the Laser Source ###
+    
+    ### Move Grid and update variables  ###
+
+        move_gridx_all(velocity, iii)
+        
+        update_after_movementx2(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_inx, slice_1d_out=slice_1d_outx, index_x=index_x, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
+        update_after_movementx2(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x, slice_1d_out=slice_1d_out_level2x, index_x=index_x_level2, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
+        update_after_movement_level3x_2(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_linx, slice_1d_out=slice_1d_out_linx, index_x=index_x_lin, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
+        
+
+        ### Updated Laser Source ###
+        qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
+        qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
+        qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
+        ### Updated Laser Source ###
+        
+        ### New old mins for update ###
+        xoldmin_s += velocity
+        xoldmin_lin += velocity
+        xoldmin_s_level2 += velocity
+        ### New old mins for update ###
+        
+        ### New min coords for interpolation ###
+        xminn +=  velocity
+        xmin_level2 += velocity
+        ### New min coords for interpolation ###
+        
+    ### Move Grid and update variables  ###
+    elif  movement == 2 and iii and velocity: 
+        ### Move the Laser Source ###
+            x00 -= velocity
+        ### Move the Laser Source ###
+        
+        ### Move Grid and update variables  ###
+            move_gridx_all(-velocity, iii)
+            
+            update_after_movementx2_negative(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_inx_negative, slice_1d_out=slice_1d_outx_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
+            update_after_movementx2_negative(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x_negative, slice_1d_out=slice_1d_out_level2x_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
+            update_after_movement_level3x_2_negative(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_linx_negative, slice_1d_out=slice_1d_out_linx_negative, index_x=0, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
+
+            ### Updated Laser Source ###
+            qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
+            qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
+            qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
+            ### Updated Laser Source ###
+            
+            ### New old mins for update ###
+            xoldmin_s -= velocity
+            xoldmin_lin -= velocity
+            xoldmin_s_level2 -= velocity
+            ### New old mins for update ###
+            
+            ### New min coords for interpolation ###
+            xminn -=  velocity
+            xmin_level2 -= velocity
+            ### New min coords for interpolation ###
+
+
+    
+    u_s_old[:] = u_s.copy()
+    u_s_level2_old[:] = u_s_level2.copy()
+
+
+
+
+    
+    ### Exract BC from previous time step for Level 2 ###
+    trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](d_x_s2_level2, d_y_s2_level2, d_z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinteold_level2, one)  
+    extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](d_uinteold_level2, nx_s_level2, nz_s_level2, ny_s_level2, d_p_r_old_level2, d_p_l_old_level2 ,  d_p_o_old_level2, d_p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
+    extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](d_uinteold_level2, ny_s_level2, nx_s_level2, p_b_old_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
+    ### Exract BC from previous time step for Level 2 ###
+
+    ### Solve the 3rd Level ###
+    rhs_lin_dirichlet[blocks_per_grid_lin, threads_per_block_lin](u_lin, nx_lin, ny_lin, nz_lin, qs_lin, b_lin, h_linsq, h_linsq, h_linsq, n2, n3, dt_lin05, u0, h_lin, two, four)    
+    u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, 1e-5, None, maxit=1000)
+    u_lin[:] = u_new_lin.copy()
+    ### Solve the 3rd Level ###
+    
+
+    ### Exract BC from current time step for Level 2 ###
+    trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](d_x_s2_level2, d_y_s2_level2, d_z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinte_level2, one)
+    extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](d_uinte_level2, nx_s_level2, nz_s_level2, ny_s_level2, d_p_r_level2, d_p_l_level2, d_p_o_level2, d_p_i_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
+    extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](d_uinte_level2, ny_s_level2, nx_s_level2, d_p_b_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
+    ### Exract BC from curren time step for Level 2 ###
+ 
+    ### Solve the 2nd Level ###
+    rhs_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2](u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, t_val,  qs_s_level2, b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, p_o_level2, p_i_level2, p_r_level2, p_l_level2, p_b_level2, p_o_old_level2, p_i_old_level2, p_r_old_level2, p_l_old_level2, p_b_old_level2, u_s_level2, h_z_new_level2, two , half, four, pii)
+    u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, 1e-6, None, maxit=1000)
+    ### Solve the 2nd Level ###
+
+
+
+    ### MOVE ON TO 1ST LEVEL ###
+    
+    ### Exract BC from previous time step for Level 1 ###
+    trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](d_x_s2, d_y_s2, d_z_s2, d_u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinteold, one)  
+    extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](d_uinteold, nx_s, nz_s, ny_s, d_p_r_old, d_p_l_old ,  d_p_o_old, d_p_i_old, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
+    extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](d_uinteold, ny_s, nx_s, d_p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
+    ### Exract BC from previous time step for Level 1 ###
+    
+    u_s_level2[:] = u_new_s_level2.copy()
+    
+    ### Exract BC from current time step for Level 1 ###
+    trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](d_x_s2, d_y_s2, d_z_s2, d_u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinte, one)
+    extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](d_uinte, nx_s, nz_s, ny_s, d_p_r, d_p_l, d_p_o, d_p_i, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
+    extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](d_uinte, ny_s, nx_s, d_p_b, slice_bc_bottom0_1d, nx_s2, ny_s2)
+    ### Exract BC from current time step for Level 1 ###
+
+    
+    ### Solve the 1st Level ###
+    for nl_lv1 in range(non_lin_it_lv1):
+        rhs_neumann[blocks_per_grid_s, threads_per_block_s](d_u_s_old, nx_s, ny_s, nz_s, t_val,  d_qs_s, d_b_s, h_ix_newsq, h_iy_newsq, h_iz_newsq, iSte, n2, n3, dt_lin05, d_p_o, d_p_i, d_p_r, d_p_l, d_p_b, d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old, d_u_s, h_z_new, two, half, four, pii)
+        u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, 1e-6, None, maxit=1000)
+
+        if nl_lv1 != nl_lv1-1:
+            u_s[:] = (one-w_lv1)*u_s + w_lv1*u_new_s
+        u_s[:] = u_new_s.copy()
+
+    iii2 += 1
+    
+    if iii == 30000:
+        print(index_y, 'was index_y')
+        velocity *= 15
+        print('velocity changed from ', velocity0, 'to ', velocity)
+    if iii != 0 and iii % 1200 == 0:
+        cntrr += 1
+        if cntrr == 3:
+            break
+        if movement == 0:
+            movement = 1
+            
+        elif cntrr==2:
+            movement = 2
+            negative = True
+        
+    if iii == 0:
+        u_s_store = u_s.copy()
+        u_s_level2_store = u_s_level2.copy()
+        u_lin_store = u_lin.copy()
+        
+        
+if layers < num_layers-1:
+    
+    velocity = velocity0
+    x00 = x00_initial
+    y00 = y00_initial
+    
+    u_s = u_s_store.copy()
+    u_s_level2 = u_s_level2_store.copy()
+    u_lin = u_lin_store.copy()
+    
+    u_s3d = shape_back_3d(u_s, nx_s, ny_s, nz_s)
+    u_s_level23d = shape_back_3d(u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2)
+    u_lin3d = shape_back_3d(u_lin, nx_lin, ny_lin, nz_lin)
+    
+    u_s3d_new[:, :, :-lay_ind_s] = u_s3d[:, :, lay_ind_s:]
+    u_s_level23d_new[:, :, :-lay_ind_s_level2] = u_s_level23d[:, :, lay_ind_s_level2:]
+    u_lin3d_new[:, :, :-lay_ind_lin] = u_lin3d[:, :, lay_ind_lin:]
+    
+    u_s3d_new[:, :, -lay_ind_s:] = u0
+    u_s_level23d_new[:, :, -lay_ind_s_level2:] = u0
+    u_lin3d_new[:, :, -lay_ind_lin:] = u0
+    
+    u_lin[:] = u_lin3d_new.ravel(order='F')
+    u_s_level2[:] = u_s_level23d_new.ravel(order='F')
+    u_s[:] = u_s3d_new.ravel(order='F')
+
+
+    z_s +=  lt_sc 
+    z_lin += lt_sc
+    z_s_level2 += lt_sc
+
+
+
+    z_max = float(z_s[-1])
+
+    qs_lin *= 0 
+    qs_s *= 0
+    qs_s_level2 *= 0
+    
+    resety_all(y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0 )
+    resetx_all(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0 )
+    xminn = float_type(x_lin[0]); yminn = float_type(y_lin[0]); zminn = float_type(z_lin[0])
+    xmin_level2 = float_type(x_s_level2[0]); ymin_level2 = float_type(y_s_level2[0]); zmin_level2 = float_type(z_s_level2[0])
+
+
+    zoldmin_s = float_type(z_s[0].get())
+    zoldmin_s_level2 = float_type(z_s_level2[0].get())
+    zoldmin_lin = float_type(z_lin[0].get())
+
+    ### Pre-Compute for update ###
+    xminn = float_type(x_lin[0].get()); yminn = float_type(y_lin[0].get()); zminn = float_type(z_lin[0].get())
+    xmin_level2 = float_type(x_s_level2[0].get()); ymin_level2 = float_type(y_s_level2[0].get()); zmin_level2 = float_type(z_s_level2[0].get())
+    
+    uin_s_level2 =  cp.zeros_like(u_s_level2[slice_1d_in_level2y], dtype = float_type)
+    uout_s = cp.zeros_like(u_s[slice_1d_outy], dtype = float_type)
+    uout_s_level2 = cp.zeros_like(u_s_level2[slice_1d_out_level2y], dtype = float_type)
+    uin_lin =  cp.zeros_like(u_lin[slice_1d_in_liny], dtype = float_type)
+
+    ny_lin_in = int(y_lin[0:index_y_lin].shape[0])
+    ny_s_in  = int(y_s[0:index_y].shape[0])
+    ny_s_out  = int(y_s[index_y:].shape[0])
+    ny_s_in_level2  = int(y_s_level2[0:index_y_level2].shape[0])
+    ny_s_out_level2  = int(y_s_level2[index_y_level2:].shape[0])
+
+    nx_lin_in = int(x_lin[0:index_x_lin].shape[0])
+    nx_s_in  = int(x_s[0:index_x].shape[0])
+    nx_s_out  = int(x_s[index_x:].shape[0])
+    nx_s_in_level2  = int(x_s_level2[0:index_x_level2].shape[0])
+    nx_s_out_level2  = int(x_s_level2[index_x_level2:].shape[0])
+
+
+    xoldmin_s = float_type(x_s[0].get())
+    yoldmin_s = float_type(y_s[0].get())
+    zoldmin_s = float_type(z_s[0].get())
+
+    xoldmin_s_level2 = float_type(x_s_level2[0].get())
+    yoldmin_s_level2 = float_type(y_s_level2[0].get())
+    zoldmin_s_level2 = float_type(z_s_level2[0].get())
+
+    xoldmin_lin = float_type(x_lin[0].get())
+    yoldmin_lin = float_type(y_lin[0].get())
+    zoldmin_lin = float_type(z_lin[0].get())
+    
+    ### Let it cool for balance ###
     for iii, t_val in enumerate(t_vals_lin):
 
         ttt += dt_lin*phys.time_scale*1e3
-        if velocity != velocity0:
-            velocity0 = velocity
-
-            update_grid_and_precompute(velocity)
-            print('velocity updated at iii = ', iii)
-            print(index_y, 'is index_y')
-            d_u_lin = cuda.to_device(u_lin)
-            d_p_o = cuda.to_device(p_o)
-            d_p_i = cuda.to_device(p_i)
-            d_p_r = cuda.to_device(p_r)
-            d_p_l = cuda.to_device(p_l)
-            d_p_b = cuda.to_device(p_b)
-
-            d_p_o_level2 = cuda.to_device(p_o_level2)
-            d_p_i_level2 = cuda.to_device(p_i_level2)
-            d_p_r_level2 = cuda.to_device(p_r_level2)
-            d_p_l_level2 = cuda.to_device(p_l_level2)
-            d_p_b_level2 = cuda.to_device(p_b_level2)
-
-            d_u_s = cuda.to_device(u_s)
-            d_u_s_level2 = cuda.to_device(u_s_level2)
-
-            d_b_lin = cuda.to_device(b_lin)
-            d_b_s = cuda.to_device(b_s)
-            d_b_s_level2 = cuda.to_device(b_s_level2)
-
-            d_uinte_level2 = cuda.to_device(uinte_level2)
-            d_uinte = cuda.to_device(uinte)
-
-            d_p_o_old = cuda.to_device(p_o_old)
-            d_p_i_old = cuda.to_device(p_i_old)
-            d_p_r_old = cuda.to_device(p_r_old)
-            d_p_l_old = cuda.to_device(p_l_old)
-            d_p_b_old = cuda.to_device(p_b_old)
-
-            d_p_o_old_level2 = cuda.to_device(p_o_old_level2)
-            d_p_i_old_level2 = cuda.to_device(p_i_old_level2)
-            d_p_r_old_level2 = cuda.to_device(p_r_old_level2)
-            d_p_l_old_level2 = cuda.to_device(p_l_old_level2)
-            d_p_b_old_level2 = cuda.to_device(p_b_old_level2)
-
-            d_qs_lin = cuda.to_device(qs_lin)
-            d_qs_s_level2 = cuda.to_device(qs_s_level2)
-            d_qs_s = cuda.to_device(qs_s)
-
-
-            d_x_lin = cuda.to_device(x_lin)
-            d_y_lin = cuda.to_device(y_lin)
-            d_z_lin = cuda.to_device(z_lin)
-
-            d_x_s = cuda.to_device(x_s)
-            d_y_s = cuda.to_device(y_s)
-            d_z_s = cuda.to_device(z_s)
-
-            d_x_s2 = cuda.to_device(x_s2)
-            d_y_s2 = cuda.to_device(y_s2)
-            d_z_s2 = cuda.to_device(z_s2)
-
-            d_x_s_level2 = cuda.to_device(x_s_level2)
-            d_y_s_level2 = cuda.to_device(y_s_level2)
-            d_z_s_level2 = cuda.to_device(z_s_level2)
-
-            d_x_s2_level2 = cuda.to_device(x_s2_level2)
-            d_y_s2_level2 = cuda.to_device(y_s2_level2)
-            d_z_s2_level2 = cuda.to_device(z_s2_level2)
-
-            d_uout_s = cuda.to_device(uout_s)
-            d_uout_s_level2 = cuda.to_device(uout_s_level2)
-
-            d_uin_s = cuda.to_device(uin_s)
-            d_uin_s_level2 = cuda.to_device(uin_s_level2)
-
-            d_u_s_level2_old = cuda.to_device(u_s_level2_old)
-            d_u_s_old = cuda.to_device(u_s_old)
-
-            d_uinteold = cuda.to_device(uinteold)
-            d_uinteold_level2 = cuda.to_device(uinteold_level2)
-
-        if movement==1 and iii and velocity : # means y-movement
-        ### Move the Laser Source ###
-            #print('here = ')
-            y00 += velocity
-        ### Move the Laser Source ###
         
-        ### Move Grid and update variables  ###
-    
-            move_gridy_all(velocity, iii)
-            
-            update_after_movementy2(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_iny, slice_1d_out=slice_1d_outy, index_y=index_y, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)
-            update_after_movementy2(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y, slice_1d_out=slice_1d_out_level2y, index_y=index_y_level2, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)
-            update_after_movement_level3y_2(x=d_x_lin, y=y_lin, z=d_z_lin, val=u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin, hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_liny, slice_1d_out=slice_1d_out_liny, index_y=index_y_lin, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)
-            
-            ### Updated Laser Source ###
-            qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
-            qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
-            qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
-            ### Updated Laser Source ###
-            
-            ### New old mins for update ###
-            yoldmin_s += velocity
-            yoldmin_lin += velocity
-            yoldmin_s_level2 += velocity
-            ### New old mins for update ###
-            
-            ### New min coords for interpolation ###)
-            yminn +=  velocity
-            ymin_level2 += velocity
-            ### New min coords for interpolation ###
-        
-        ### Move Grid and update variables  ###
-        elif  movement == 3 and iii and velocity: 
-            ### Move the Laser Source ###
-                y00 -= velocity
-            ### Move the Laser Source ###
-            
-            ### Move Grid and update variables  ###
-
-                move_gridy_all(-velocity, iii)
-                                                
-                update_after_movementy2_negative(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_iny_negative, slice_1d_out=slice_1d_outy_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)                                                
-                update_after_movementy2_negative(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y_negative, slice_1d_out=slice_1d_out_level2y_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)                                                      
-                update_after_movement_level3y_2_negative(x=d_x_lin, y=y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_liny_negative, slice_1d_out=slice_1d_out_liny_negative, index_y=0, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)            
-
-
-                ### Updated Laser Source ###
-                qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
-                qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
-                qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
-                ### Updated Laser Source ###
-                
-                ### New old mins for update ###
-                yoldmin_s -= velocity
-                yoldmin_lin -= velocity
-                yoldmin_s_level2 -= velocity
-                ### New old mins for update ###
-                
-                ### New min coords for interpolation ###
-                yminn -=  velocity
-                ymin_level2 -= velocity
-                ### New min coords for interpolation ###
-
-            
-        ### Move Grid and update variables###
-        elif not movement and iii and velocity: # means x-movement
-        ### Move the Laser Source ###
-            x00 += velocity
-        ### Move the Laser Source ###
-        
-        ### Move Grid and update variables  ###
-
-            move_gridx_all(velocity, iii)
-            
-            update_after_movementx2(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_inx, slice_1d_out=slice_1d_outx, index_x=index_x, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
-            update_after_movementx2(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x, slice_1d_out=slice_1d_out_level2x, index_x=index_x_level2, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
-            update_after_movement_level3x_2(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_linx, slice_1d_out=slice_1d_out_linx, index_x=index_x_lin, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
-            
-
-            ### Updated Laser Source ###
-            qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
-            qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
-            qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
-            ### Updated Laser Source ###
-            
-            ### New old mins for update ###
-            xoldmin_s += velocity
-            xoldmin_lin += velocity
-            xoldmin_s_level2 += velocity
-            ### New old mins for update ###
-            
-            ### New min coords for interpolation ###
-            xminn +=  velocity
-            xmin_level2 += velocity
-            ### New min coords for interpolation ###
-            
-        ### Move Grid and update variables  ###
-        elif  movement == 2 and iii and velocity: 
-            ### Move the Laser Source ###
-                x00 -= velocity
-            ### Move the Laser Source ###
-            
-            ### Move Grid and update variables  ###
-                move_gridx_all(-velocity, iii)
-                
-                update_after_movementx2_negative(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=one, val3=u_s, slice_1d_in=slice_1d_inx_negative, slice_1d_out=slice_1d_outx_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
-                update_after_movementx2_negative(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=one, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x_negative, slice_1d_out=slice_1d_out_level2x_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
-                update_after_movement_level3x_2_negative(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_linx_negative, slice_1d_out=slice_1d_out_linx_negative, index_x=0, u0=u0 , one=one,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
-
-                ### Updated Laser Source ###
-                qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
-                qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
-                qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
-                ### Updated Laser Source ###
-                
-                ### New old mins for update ###
-                xoldmin_s -= velocity
-                xoldmin_lin -= velocity
-                xoldmin_s_level2 -= velocity
-                ### New old mins for update ###
-                
-                ### New min coords for interpolation ###
-                xminn -=  velocity
-                xmin_level2 -= velocity
-                ### New min coords for interpolation ###
-
-
-        
-        u_s_old[:] = u_s.copy()
         u_s_level2_old[:] = u_s_level2.copy()
+        u_s_old[:] = u_s.copy()
 
-    
 
-    
         
         ### Exract BC from previous time step for Level 2 ###
-        trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](d_x_s2_level2, d_y_s2_level2, d_z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinteold_level2, one)  
-        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](d_uinteold_level2, nx_s_level2, nz_s_level2, ny_s_level2, d_p_r_old_level2, d_p_l_old_level2 ,  d_p_o_old_level2, d_p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
-        extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](d_uinteold_level2, ny_s_level2, nx_s_level2, p_b_old_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
+        trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](x_s2_level2, y_s2_level2, z_s2_level2, u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, uinteold_level2, one)  
+        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](uinteold_level2, nx_s_level2, nz_s_level2, ny_s_level2, p_r_old_level2, p_l_old_level2 ,  p_o_old_level2, p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
+        extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](uinteold_level2, ny_s_level2, nx_s_level2, p_b_old_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
         ### Exract BC from previous time step for Level 2 ###
     
         ### Solve the 3rd Level ###
-        rhs_lin_dirichlet[blocks_per_grid_lin, threads_per_block_lin](u_lin, nx_lin, ny_lin, nz_lin, qs_lin, b_lin, h_linsq, h_linsq, h_linsq, n2, n3, dt_lin05, u0, h_lin, two, four)    
-        u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, 1e-5, None, maxit=1000)
+        rhs_lin_dirichlet[blocks_per_grid_lin, threads_per_block_lin](d_u_lin, nx_lin, ny_lin, nz_lin, d_qs_lin, d_b_lin, h_linsq, h_linsq, h_linsq, n2, n3, dt_lin05, u0, h_lin, two, four)
+        u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, 1e-6, None, maxit=1000)
         u_lin[:] = u_new_lin.copy()
         ### Solve the 3rd Level ###
         
-
         ### Exract BC from current time step for Level 2 ###
-        trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](d_x_s2_level2, d_y_s2_level2, d_z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinte_level2, one)
+        trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](x_s2_level2, y_s2_level2, z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinte_level2, one)
         extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](d_uinte_level2, nx_s_level2, nz_s_level2, ny_s_level2, d_p_r_level2, d_p_l_level2, d_p_o_level2, d_p_i_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
         extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](d_uinte_level2, ny_s_level2, nx_s_level2, d_p_b_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
         ### Exract BC from curren time step for Level 2 ###
      
         ### Solve the 2nd Level ###
-        rhs_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2](u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, t_val,  qs_s_level2, b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, p_o_level2, p_i_level2, p_r_level2, p_l_level2, p_b_level2, p_o_old_level2, p_i_old_level2, p_r_old_level2, p_l_old_level2, p_b_old_level2, u_s_level2, h_z_new_level2, two , half, four, pii)
+        rhs_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2](d_u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, t_val,  d_qs_s_level2, d_b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, d_p_o_level2, d_p_i_level2, d_p_r_level2, d_p_l_level2, d_p_b_level2, d_p_o_old_level2, d_p_i_old_level2, d_p_r_old_level2, d_p_l_old_level2, d_p_b_old_level2, d_u_s_level2, h_z_new_level2, two , half, four, pii)
         u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, 1e-6, None, maxit=1000)
         ### Solve the 2nd Level ###
-
-
-
+        
+        
         ### MOVE ON TO 1ST LEVEL ###
         
         ### Exract BC from previous time step for Level 1 ###
-        trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](d_x_s2, d_y_s2, d_z_s2, d_u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinteold, one)  
-        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](d_uinteold, nx_s, nz_s, ny_s, d_p_r_old, d_p_l_old ,  d_p_o_old, d_p_i_old, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
-        extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](d_uinteold, ny_s, nx_s, d_p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
+        trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](x_s2, y_s2, z_s2, u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, uinteold, one)  
+        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](uinteold, nx_s, nz_s, ny_s, p_r_old, p_l_old ,  p_o_old, p_i_old, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
+        extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](uinteold, ny_s, nx_s, p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
         ### Exract BC from previous time step for Level 1 ###
         
         u_s_level2[:] = u_new_s_level2.copy()
         
         ### Exract BC from current time step for Level 1 ###
-        trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](d_x_s2, d_y_s2, d_z_s2, d_u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinte, one)
+        trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](x_s2, y_s2, z_s2, d_u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinte, one)
         extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](d_uinte, nx_s, nz_s, ny_s, d_p_r, d_p_l, d_p_o, d_p_i, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
         extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](d_uinte, ny_s, nx_s, d_p_b, slice_bc_bottom0_1d, nx_s2, ny_s2)
         ### Exract BC from current time step for Level 1 ###
     
         
         ### Solve the 1st Level ###
-        for nl_lv1 in range(non_lin_it_lv1):
-            rhs_neumann[blocks_per_grid_s, threads_per_block_s](d_u_s_old, nx_s, ny_s, nz_s, t_val,  d_qs_s, d_b_s, h_ix_newsq, h_iy_newsq, h_iz_newsq, iSte, n2, n3, dt_lin05, d_p_o, d_p_i, d_p_r, d_p_l, d_p_b, d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old, d_u_s, h_z_new, two, half, four, pii)
-            u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, 1e-6, None, maxit=1000)
-
-            if nl_lv1 != nl_lv1-1:
-                u_s[:] = (one-w_lv1)*u_s + w_lv1*u_new_s
-            u_s[:] = u_new_s.copy()
-
-        iii2 += 1
+        rhs_neumann[blocks_per_grid_s, threads_per_block_s](d_u_s_old, nx_s, ny_s, nz_s, t_val,  d_qs_s, d_b_s, h_ix_newsq, h_iy_newsq, h_iz_newsq, iSte, n2, n3, dt_lin05, d_p_o, d_p_i, d_p_r, d_p_l, d_p_b, d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old, d_u_s, h_z_new, two, half, four, pii)
+        u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, 1e-6, None, maxit=1000)
+        u_s[:] = u_new_s.copy()          
+        ### Solve the 1st Level ###
         
-        if iii == 30000:
-            print(index_y, 'was index_y')
-            velocity *= 15
-            print('velocity changed from ', velocity0, 'to ', velocity)
-        if iii != 0 and iii % 1200 == 0:
-            cntrr += 1
-            if cntrr == 3:
-                break
-            if movement == 0:
-                movement = 1
-                
-            elif cntrr==2:
-                movement = 2
-                negative = True
-            
-        if iii == 0:
-            u_s_store = u_s.copy()
-            u_s_level2_store = u_s_level2.copy()
-            u_lin_store = u_lin.copy()
-            
-            
-    if layers < num_layers-1:
         
-        velocity = velocity0
-        x00 = x00_initial
-        y00 = y00_initial
-        
-        u_s = u_s_store.copy()
-        u_s_level2 = u_s_level2_store.copy()
-        u_lin = u_lin_store.copy()
-        
-        u_s3d = shape_back_3d(u_s, nx_s, ny_s, nz_s)
-        u_s_level23d = shape_back_3d(u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2)
-        u_lin3d = shape_back_3d(u_lin, nx_lin, ny_lin, nz_lin)
-        
-        u_s3d_new[:, :, :-lay_ind_s] = u_s3d[:, :, lay_ind_s:]
-        u_s_level23d_new[:, :, :-lay_ind_s_level2] = u_s_level23d[:, :, lay_ind_s_level2:]
-        u_lin3d_new[:, :, :-lay_ind_lin] = u_lin3d[:, :, lay_ind_lin:]
-        
-        u_s3d_new[:, :, -lay_ind_s:] = u0
-        u_s_level23d_new[:, :, -lay_ind_s_level2:] = u0
-        u_lin3d_new[:, :, -lay_ind_lin:] = u0
-        
-        u_lin[:] = u_lin3d_new.ravel(order='F')
-        u_s_level2[:] = u_s_level23d_new.ravel(order='F')
-        u_s[:] = u_s3d_new.ravel(order='F')
+        if iii == 100:
+            break     
+### Let it cool for balance ###
 
 
-        z_s +=  lt_sc 
-        z_lin += lt_sc
-        z_s_level2 += lt_sc
-    
-
-
-        z_max = float(z_s[-1])
-
-        qs_lin *= 0 
-        qs_s *= 0
-        qs_s_level2 *= 0
-        
-        resety_all(y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0 )
-        resetx_all(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0 )
-        xminn = float_type(x_lin[0]); yminn = float_type(y_lin[0]); zminn = float_type(z_lin[0])
-        xmin_level2 = float_type(x_s_level2[0]); ymin_level2 = float_type(y_s_level2[0]); zmin_level2 = float_type(z_s_level2[0])
-
-
-        zoldmin_s = float_type(z_s[0].get())
-        zoldmin_s_level2 = float_type(z_s_level2[0].get())
-        zoldmin_lin = float_type(z_lin[0].get())
-
-        ### Pre-Compute for update ###
-        xminn = float_type(x_lin[0].get()); yminn = float_type(y_lin[0].get()); zminn = float_type(z_lin[0].get())
-        xmin_level2 = float_type(x_s_level2[0].get()); ymin_level2 = float_type(y_s_level2[0].get()); zmin_level2 = float_type(z_s_level2[0].get())
-        
-        uin_s_level2 =  cp.zeros_like(u_s_level2[slice_1d_in_level2y], dtype = float_type)
-        uout_s = cp.zeros_like(u_s[slice_1d_outy], dtype = float_type)
-        uout_s_level2 = cp.zeros_like(u_s_level2[slice_1d_out_level2y], dtype = float_type)
-        uin_lin =  cp.zeros_like(u_lin[slice_1d_in_liny], dtype = float_type)
-
-        ny_lin_in = int(y_lin[0:index_y_lin].shape[0])
-        ny_s_in  = int(y_s[0:index_y].shape[0])
-        ny_s_out  = int(y_s[index_y:].shape[0])
-        ny_s_in_level2  = int(y_s_level2[0:index_y_level2].shape[0])
-        ny_s_out_level2  = int(y_s_level2[index_y_level2:].shape[0])
-
-        nx_lin_in = int(x_lin[0:index_x_lin].shape[0])
-        nx_s_in  = int(x_s[0:index_x].shape[0])
-        nx_s_out  = int(x_s[index_x:].shape[0])
-        nx_s_in_level2  = int(x_s_level2[0:index_x_level2].shape[0])
-        nx_s_out_level2  = int(x_s_level2[index_x_level2:].shape[0])
-
-
-        xoldmin_s = float_type(x_s[0].get())
-        yoldmin_s = float_type(y_s[0].get())
-        zoldmin_s = float_type(z_s[0].get())
-
-        xoldmin_s_level2 = float_type(x_s_level2[0].get())
-        yoldmin_s_level2 = float_type(y_s_level2[0].get())
-        zoldmin_s_level2 = float_type(z_s_level2[0].get())
-
-        xoldmin_lin = float_type(x_lin[0].get())
-        yoldmin_lin = float_type(y_lin[0].get())
-        zoldmin_lin = float_type(z_lin[0].get())
-        
-        ### Let it cool for balance ###
-        for iii, t_val in enumerate(t_vals_lin):
-    
-            ttt += dt_lin*phys.time_scale*1e3
-            
-            u_s_level2_old[:] = u_s_level2.copy()
-            u_s_old[:] = u_s.copy()
-    
-    
-            
-            ### Exract BC from previous time step for Level 2 ###
-            trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](x_s2_level2, y_s2_level2, z_s2_level2, u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, uinteold_level2, one)  
-            extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](uinteold_level2, nx_s_level2, nz_s_level2, ny_s_level2, p_r_old_level2, p_l_old_level2 ,  p_o_old_level2, p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
-            extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](uinteold_level2, ny_s_level2, nx_s_level2, p_b_old_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
-            ### Exract BC from previous time step for Level 2 ###
-        
-            ### Solve the 3rd Level ###
-            rhs_lin_dirichlet[blocks_per_grid_lin, threads_per_block_lin](d_u_lin, nx_lin, ny_lin, nz_lin, d_qs_lin, d_b_lin, h_linsq, h_linsq, h_linsq, n2, n3, dt_lin05, u0, h_lin, two, four)
-            u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, 1e-6, None, maxit=1000)
-            u_lin[:] = u_new_lin.copy()
-            ### Solve the 3rd Level ###
-            
-            ### Exract BC from current time step for Level 2 ###
-            trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](x_s2_level2, y_s2_level2, z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinte_level2, one)
-            extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](d_uinte_level2, nx_s_level2, nz_s_level2, ny_s_level2, d_p_r_level2, d_p_l_level2, d_p_o_level2, d_p_i_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
-            extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](d_uinte_level2, ny_s_level2, nx_s_level2, d_p_b_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
-            ### Exract BC from curren time step for Level 2 ###
-         
-            ### Solve the 2nd Level ###
-            rhs_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2](d_u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, t_val,  d_qs_s_level2, d_b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, d_p_o_level2, d_p_i_level2, d_p_r_level2, d_p_l_level2, d_p_b_level2, d_p_o_old_level2, d_p_i_old_level2, d_p_r_old_level2, d_p_l_old_level2, d_p_b_old_level2, d_u_s_level2, h_z_new_level2, two , half, four, pii)
-            u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, 1e-6, None, maxit=1000)
-            ### Solve the 2nd Level ###
-            
-            
-            ### MOVE ON TO 1ST LEVEL ###
-            
-            ### Exract BC from previous time step for Level 1 ###
-            trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](x_s2, y_s2, z_s2, u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, uinteold, one)  
-            extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](uinteold, nx_s, nz_s, ny_s, p_r_old, p_l_old ,  p_o_old, p_i_old, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
-            extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](uinteold, ny_s, nx_s, p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
-            ### Exract BC from previous time step for Level 1 ###
-            
-            u_s_level2[:] = u_new_s_level2.copy()
-            
-            ### Exract BC from current time step for Level 1 ###
-            trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](x_s2, y_s2, z_s2, d_u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinte, one)
-            extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](d_uinte, nx_s, nz_s, ny_s, d_p_r, d_p_l, d_p_o, d_p_i, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
-            extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](d_uinte, ny_s, nx_s, d_p_b, slice_bc_bottom0_1d, nx_s2, ny_s2)
-            ### Exract BC from current time step for Level 1 ###
-        
-            
-            ### Solve the 1st Level ###
-            rhs_neumann[blocks_per_grid_s, threads_per_block_s](d_u_s_old, nx_s, ny_s, nz_s, t_val,  d_qs_s, d_b_s, h_ix_newsq, h_iy_newsq, h_iz_newsq, iSte, n2, n3, dt_lin05, d_p_o, d_p_i, d_p_r, d_p_l, d_p_b, d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old, d_u_s, h_z_new, two, half, four, pii)
-            u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, 1e-6, None, maxit=1000)
-            u_s[:] = u_new_s.copy()          
-            ### Solve the 1st Level ###
-            
-            
-            if iii == 100:
-                break     
-    ### Let it cool for balance ###
 
 
 
