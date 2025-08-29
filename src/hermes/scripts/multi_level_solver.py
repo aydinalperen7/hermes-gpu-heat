@@ -22,11 +22,11 @@ from hermes.runtime.movement import (
 )
 from hermes.runtime.gpu_setup import  launch_3d, launch_bc
 
-from hermes.kenrels.rhs import rhs_level3_dirichlet as rhs_lin_dirichlet
-from hermes.kenrels.rhs import rhs_level12_neumann as rhs_neumann
-from hermes.kenrels.matvec import mv_level3_dirichlet, mv_level12_neumann
-from hermes.kenrels.bc import extract_neumann_bc_r_l_i_o, extract_neumann_bc_b
-from hermes.kenrels.interp import  trilinear_interpolation
+from hermes.kernels.rhs import rhs_level3_dirichlet as rhs_lin_dirichlet
+from hermes.kernels.rhs import rhs_level12_neumann as rhs_neumann
+from hermes.kernels.matvec import mv_level3_dirichlet, mv_level12_neumann
+from hermes.kernels.bc import extract_neumann_bc_r_l_i_o, extract_neumann_bc_b
+from hermes.kernels.interp import  trilinear_interpolation
 
 
 
@@ -40,16 +40,17 @@ def gaussian2d(x, y, sigma,x00,y00): return two * phys.n1 * cp.exp(-((x-x00)**tw
     
 
 
+
 def mv_wrapper_lin(v):
-    mv_level3_dirichlet[blocks_per_grid_lin,threads_per_block_lin](v, d_result_lin, nx_lin, ny_lin, nz_lin, h_linsq, h_linsq, h_linsq, dt_lin05, n2, u0, h_lin, two)
+    mv_level3_dirichlet[blocks_per_grid_lin,threads_per_block_lin]( nx_lin, ny_lin, nz_lin, v, d_result_lin, h_linsq, h_linsq, h_linsq, dt_lin05, n2, u0, h_lin)
     return result_lin
 
 def mv_wrapper_s(v):
-    mv_level12_neumann[blocks_per_grid_s,threads_per_block_s ](v,d_result_s, nx_s, ny_s, nz_s,h_ix_newsq, h_iy_newsq, h_iz_newsq, dt_lin05, n2, iSte, u_s, h_z_new, two, half, one, pii) 
+    mv_level12_neumann[blocks_per_grid_s,threads_per_block_s ](nx_s, ny_s, nz_s, v, d_result_s ,h_ix_newsq, h_iy_newsq, h_iz_newsq, dt_lin05, n2, iSte, u_s, h_z_new) 
     return result_s
 
 def mv_wrapper_s_level2(v):
-    mv_level12_neumann[blocks_per_grid_s_level2,threads_per_block_s_level2](v, d_result_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, dt_lin05, n2, iSte, u_s_level2, h_z_new_level2, two , half, one, pii)
+    mv_level12_neumann[blocks_per_grid_s_level2,threads_per_block_s_level2]( nx_s_level2, ny_s_level2, nz_s_level2, v, d_result_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, dt_lin05, n2, iSte, u_s_level2, h_z_new_level2)
     return result_s_level2
 
 
@@ -446,12 +447,11 @@ n1     = float_type(phys.n1)
 n2     = float_type(phys.n2)
 n3     = float_type(phys.n3)
 u0     = float_type(phys.u0)
-u0 = float_type(phys.u0)
 ttt = 0 # Starting time
 ### PHYSICAL PARAMETERS ### --COMPUTE BASED ON USER INPUT
 
 
-lxd_level3 = 96*50e-6; lyd_level3 = 96*50e-6; lzd_level3 = 48*50e-6; h_level3 = 18e-6 #-- USER INPUT FOR LEVEL 3
+lxd_level3 = 96*50e-6; lyd_level3 = 96*50e-6; lzd_level3 = 48*50e-6; h_level3 = 18.75e-6 #-- USER INPUT FOR LEVEL 3
 
 ###  -- COMPUTE BASED ON USER INPUT
 outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, cp)
@@ -966,7 +966,9 @@ for layers in range(num_layers):
 
 
 
-  
+
+
+
  
     for iii, t_val in enumerate(t_vals_lin):
 
@@ -1403,9 +1405,6 @@ for layers in range(num_layers):
             if iii == 100:
                 break     
     ### Let it cool for balance ###
-
-
-
 
 
 
