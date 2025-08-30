@@ -879,7 +879,7 @@ for layers in range(num_layers):
     
     
     cntrr = 0
-    movement = 3
+    movement = 1
     y00 = y00_initial
     x00 = x00_initial
     
@@ -1192,8 +1192,8 @@ for layers in range(num_layers):
         
         ### Exract BC from previous time step for Level 2 ###
         trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](d_x_s2_level2, d_y_s2_level2, d_z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinteold_level2, one)  
-        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](d_uinteold_level2, nx_s_level2, nz_s_level2, ny_s_level2, d_p_r_old_level2, d_p_l_old_level2 ,  d_p_o_old_level2, d_p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
-        extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](d_uinteold_level2, ny_s_level2, nx_s_level2, p_b_old_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
+        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1]( nx_s_level2, ny_s_level2, nz_s_level2, d_uinteold_level2, d_p_r_old_level2, d_p_l_old_level2 ,  d_p_o_old_level2, d_p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
+        extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](nx_s_level2, ny_s_level2, d_uinteold_level2,  p_b_old_level2,  slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
         ### Exract BC from previous time step for Level 2 ###
     
         ### Solve the 3rd Level ###
@@ -1205,8 +1205,8 @@ for layers in range(num_layers):
     
         ### Exract BC from current time step for Level 2 ###
         trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](d_x_s2_level2, d_y_s2_level2, d_z_s2_level2, d_u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, d_uinte_level2, one)
-        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](d_uinte_level2, nx_s_level2, nz_s_level2, ny_s_level2, d_p_r_level2, d_p_l_level2, d_p_o_level2, d_p_i_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
-        extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](d_uinte_level2, ny_s_level2, nx_s_level2, d_p_b_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
+        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](nx_s_level2, ny_s_level2, nz_s_level2, d_uinte_level2, d_p_r_level2, d_p_l_level2, d_p_o_level2, d_p_i_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
+        extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2]( nx_s_level2, ny_s_level2, d_uinte_level2, d_p_b_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
         ### Exract BC from curren time step for Level 2 ###
      
         ### Solve the 2nd Level ###
@@ -1220,16 +1220,16 @@ for layers in range(num_layers):
         
         ### Exract BC from previous time step for Level 1 ###
         trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](d_x_s2, d_y_s2, d_z_s2, d_u_s_level2_old, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinteold, one)  
-        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](d_uinteold, nx_s, nz_s, ny_s, d_p_r_old, d_p_l_old ,  d_p_o_old, d_p_i_old, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
-        extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](d_uinteold, ny_s, nx_s, d_p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
+        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3]( nx_s, ny_s, nz_s, d_uinteold, d_p_r_old, d_p_l_old ,  d_p_o_old, d_p_i_old, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
+        extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4]( nx_s, ny_s, d_uinteold, d_p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
         ### Exract BC from previous time step for Level 1 ###
         
         u_s_level2[:] = u_new_s_level2.copy()
         
         ### Exract BC from current time step for Level 1 ###
         trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](d_x_s2, d_y_s2, d_z_s2, d_u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinte, one)
-        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](d_uinte, nx_s, nz_s, ny_s, d_p_r, d_p_l, d_p_o, d_p_i, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
-        extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](d_uinte, ny_s, nx_s, d_p_b, slice_bc_bottom0_1d, nx_s2, ny_s2)
+        extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc3, threads_per_block_bc3](nx_s, ny_s, nz_s, d_uinte, d_p_r, d_p_l, d_p_o, d_p_i, slice_bc_out0_1d, slice_bc_in0_1d, slice_bc_right0_1d, slice_bc_left0_1d,  nx_s2)
+        extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4](nx_s, ny_s,d_uinte, d_p_b, slice_bc_bottom0_1d, nx_s2, ny_s2)
         ### Exract BC from current time step for Level 1 ###
     
         
