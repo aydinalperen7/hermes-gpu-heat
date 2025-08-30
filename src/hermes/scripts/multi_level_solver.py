@@ -36,7 +36,7 @@ def len_dim(x): return x *  phys.len_scale      # [m]
 def len_um(x): return x *  phys.len_scale * 1e6    # [um]
 def shape_back_3d(u, nx, ny, nz): return cp.reshape(u, (nx, ny, nz), order='F')
 def temp_dim(u): return u * phys.deltaT + phys.Ts  # [K]
-def gaussian2d(x, y, sigma,x00,y00): return two * phys.n1 * cp.exp(-((x-x00)**two + (y-y00)**two) / (two * sigma**two)) 
+def gaussian2d(x, y, sigma,x00,y00): return  phys.n1 * cp.exp(-two*((x-x00)**two + (y-y00)**two) / ( (sigma)**two)) 
     
 
 
@@ -886,6 +886,7 @@ for layers in range(num_layers):
     qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
     qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
     qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
+    
 
 
     if layers > 0 :
@@ -1075,13 +1076,14 @@ for layers in range(num_layers):
             qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
             ### Updated Laser Source ###
             
+
             ### New old mins for update ###
             yoldmin_s += velocity
             yoldmin_lin += velocity
             yoldmin_s_level2 += velocity
             ### New old mins for update ###
             
-            ### New min coords for interpolation ###)
+            ### New min coords for interpolation ###
             yminn +=  velocity
             ymin_level2 += velocity
             ### New min coords for interpolation ###
@@ -1243,9 +1245,8 @@ for layers in range(num_layers):
             u_s[:] = u_new_s.copy()
     
         iii2 += 1
-        print('cp.mean(u_s) = ', cp.mean(u_s), 'at iii = ', iii)
-        print('cp.mean(u_s_level2) = ', cp.mean(u_s_level2), 'at iii = ', iii)
-        print('cp.mean(u_lin) = ', cp.mean(u_lin), 'at iii = ', iii)
+        
+        
 
         
         # if iii == 30000:
