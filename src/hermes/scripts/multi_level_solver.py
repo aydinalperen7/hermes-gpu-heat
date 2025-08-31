@@ -30,6 +30,8 @@ from hermes.kernels.rhs import rhs_level12_neumann
 from hermes.kernels.matvec import mv_level3_dirichlet, mv_level12_neumann
 from hermes.kernels.bc import extract_neumann_bc_r_l_i_o, extract_neumann_bc_b
 from hermes.kernels.interp import  trilinear_interpolation
+from hermes.runtime.state import GridState
+
 
 
 
@@ -72,62 +74,6 @@ def sparse_cg(A, b, u0, TOL, P, maxit):
         
 
 ### FUNCS FOR MOVING ###
-
-def move_gridy_all(velocity, iii):
-    global y_s, Y_s, y_s2, y_s_level2, Y_s_level2, y_s2_level2, y_lin, Y_lin
-    if iii != 0:
-        y_s[:] += velocity
-        y_s2[:] +=  velocity
-        Y_s[:] += velocity
-        
-        y_s_level2[:] += velocity
-        y_s2_level2[:] += velocity
-        Y_s_level2[:] += velocity
-        
-        y_lin[:] +=  velocity
-        Y_lin[:] +=  velocity
-
-def move_gridx_all(velocity, iii):
-    global x_s, X_s, x_s2, x_s_level2, X_s_level2, x_s2_level2, x_lin, X_lin
-    if iii != 0:
-        x_s[:] += velocity
-        x_s2[:] += velocity
-        X_s[:] += velocity
-        
-        x_s_level2[:] += velocity
-        x_s2_level2[:] += velocity
-        X_s_level2[:] += velocity
-        
-        x_lin[:] += velocity
-        X_lin[:] += velocity
-
-def resety_all(y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0 ):
-    global y_s, Y_s, y_s2, y_s_level2, Y_s_level2, y_s2_level2, y_lin, Y_lin
-
-    y_s[:] = y_s0.copy()
-    y_s2[:] =  y_s20.copy()
-    Y_s[:] = Y_s0.copy()
-    
-    y_s_level2[:] = y_s0_level2.copy()
-    y_s2_level2[:] = y_s20_level2.copy()
-    Y_s_level2[:] = Y_s0_level2.copy()
-    
-    y_lin[:] =  y_lin0.copy()
-    Y_lin[:] =  Y_lin0.copy()
-    
-def resetx_all(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0):
-    global x_s, X_s, x_s2, x_s_level2, X_s_level2, x_s2_level2, x_lin, X_lin
-
-    x_s[:] = x_s0.copy()
-    x_s2[:] = x_s20.copy()
-    X_s[:] = X_s0.copy()
-    
-    x_s_level2[:] = x_s0_level2.copy()
-    x_s2_level2[:] = x_s20_level2.copy()
-    X_s_level2[:] = X_s0_level2.copy()
-    
-    x_lin[:] = x_lin0.copy()
-    X_lin[:] = X_lin0.copy()
 
 
 
@@ -202,32 +148,62 @@ def update_grid_and_precompute(velocity):
     ymin_level2 = float_type(y_s_level2[0].get())
     zmin_level2 = float_type(z_s_level2[0].get())
 
-    (
-        uin_s, uout_s, ny_s_in, ny_s_out, nx_s_in, nx_s_out,
-        xoldmin_s, yoldmin_s, zoldmin_s,
-        blocks_per_grid_in_s_y, blocks_per_grid_out_s_y,
-        blocks_per_grid_in_s_x, blocks_per_grid_out_s_x,
-        threads_per_block_in_s_y, threads_per_block_out_s_y,
-        threads_per_block_in_s_x, threads_per_block_out_s_x
-    ) = precompute_for_update(u_s, nx_s, ny_s, nz_s, y_s, index_y, x_s, index_x, slice_1d_iny, slice_1d_outy, z_s)
+    pre_s = precompute_for_update(u_s, nx_s, ny_s, nz_s, y_s, index_y, x_s, index_x, slice_1d_iny, slice_1d_outy, z_s, float_type=float_type)
+    uin_s                   = pre_s["u_in"]
+    uout_s                  = pre_s["u_out"]
+    ny_s_in                 = pre_s["ny_in"]
+    ny_s_out                = pre_s["ny_out"]
+    nx_s_in                 = pre_s["nx_in"]
+    nx_s_out                = pre_s["nx_out"]
+    xoldmin_s               = pre_s["xoldmin"]
+    yoldmin_s               = pre_s["yoldmin"]
+    zoldmin_s               = pre_s["zoldmin"]
+    blocks_per_grid_in_s_y  = pre_s["blocks_in_y"]
+    blocks_per_grid_out_s_y = pre_s["blocks_out_y"]
+    blocks_per_grid_in_s_x  = pre_s["blocks_in_x"]
+    blocks_per_grid_out_s_x = pre_s["blocks_out_x"]
+    threads_per_block_in_s_y  = pre_s["tpbin"]
+    threads_per_block_out_s_y = pre_s["tpbout"]
+    threads_per_block_in_s_x  = pre_s["tpbin_x"]
+    threads_per_block_out_s_x = pre_s["tpbout_x"]
 
-    (
-        uin_s_level2, uout_s_level2, ny_s_in_level2, ny_s_out_level2, nx_s_in_level2, nx_s_out_level2,
-        xoldmin_s_level2, yoldmin_s_level2, zoldmin_s_level2,
-        blocks_per_grid_in_s_level2_y, blocks_per_grid_out_s_level2_y,
-        blocks_per_grid_in_s_level2_x, blocks_per_grid_out_s_level2_x,
-        threads_per_block_in_s_level2_y, threads_per_block_out_s_level2_y,
-        threads_per_block_in_s_level2_x, threads_per_block_out_s_level2_x
-    ) = precompute_for_update(u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, y_s_level2, index_y_level2, x_s_level2, index_x_level2, slice_1d_in_level2y, slice_1d_out_level2y, z_s_level2)
+    pre_s_level2 = precompute_for_update(u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, y_s_level2, index_y_level2, x_s_level2, index_x_level2, slice_1d_in_level2y, slice_1d_out_level2y, z_s_level2, float_type=float_type)
+    uin_s_level2                   = pre_s_level2["u_in"]
+    uout_s_level2                  = pre_s_level2["u_out"]
+    ny_s_in_level2                 = pre_s_level2["ny_in"]
+    ny_s_out_level2                = pre_s_level2["ny_out"]
+    nx_s_in_level2                 = pre_s_level2["nx_in"]
+    nx_s_out_level2                = pre_s_level2["nx_out"]
+    xoldmin_s_level2               = pre_s_level2["xoldmin"]
+    yoldmin_s_level2               = pre_s_level2["yoldmin"]
+    zoldmin_s_level2               = pre_s_level2["zoldmin"]
+    blocks_per_grid_in_s_level2_y  = pre_s_level2["blocks_in_y"]
+    blocks_per_grid_out_s_level2_y = pre_s_level2["blocks_out_y"]
+    blocks_per_grid_in_s_level2_x  = pre_s_level2["blocks_in_x"]
+    blocks_per_grid_out_s_level2_x = pre_s_level2["blocks_out_x"]
+    threads_per_block_in_s_level2_y  = pre_s_level2["tpbin"]
+    threads_per_block_out_s_level2_y = pre_s_level2["tpbout"]
+    threads_per_block_in_s_level2_x  = pre_s_level2["tpbin_x"]
+    threads_per_block_out_s_level2_x = pre_s_level2["tpbout_x"]
 
-    (
-        uin_lin, uout_lin, ny_lin_in, ny_lin_out, nx_lin_in, nx_lin_out,
-        xoldmin_lin, yoldmin_lin, zoldmin_lin,
-        blocks_per_grid_in_lin_y, blocks_per_grid_out_lin_y,
-        blocks_per_grid_in_lin_x, blocks_per_grid_out_lin_x,
-        threads_per_block_in_lin_y, threads_per_block_out_lin_y,
-        threads_per_block_in_lin_x, threads_per_block_out_lin_x
-    ) = precompute_for_update(u_lin, nx_lin, ny_lin, nz_lin, y_lin, index_y_lin, x_lin, index_x_lin, slice_1d_in_liny, slice_1d_out_liny, z_lin)
+    pre_lin = precompute_for_update(u_lin, nx_lin, ny_lin, nz_lin, y_lin, index_y_lin, x_lin, index_x_lin, slice_1d_in_liny, slice_1d_out_liny, z_lin, float_type=float_type)
+    uin_lin                   = pre_lin["u_in"]
+    uout_lin                  = pre_lin["u_out"]
+    ny_lin_in                 = pre_lin["ny_in"]
+    ny_lin_out                = pre_lin["ny_out"]
+    nx_lin_in                 = pre_lin["nx_in"]
+    nx_lin_out                = pre_lin["nx_out"]
+    xoldmin_lin               = pre_lin["xoldmin"]
+    yoldmin_lin               = pre_lin["yoldmin"]
+    zoldmin_lin               = pre_lin["zoldmin"]
+    blocks_per_grid_in_lin_y  = pre_lin["blocks_in_y"]
+    blocks_per_grid_out_lin_y = pre_lin["blocks_out_y"]
+    blocks_per_grid_in_lin_x  = pre_lin["blocks_in_x"]
+    blocks_per_grid_out_lin_x = pre_lin["blocks_out_x"]
+    threads_per_block_in_lin_y  = pre_lin["tpbin"]
+    threads_per_block_out_lin_y = pre_lin["tpbout"]
+    threads_per_block_in_lin_x  = pre_lin["tpbin_x"]
+    threads_per_block_out_lin_x = pre_lin["tpbout_x"]
 
     ### Pre-Compute for update ###
 
@@ -689,7 +665,13 @@ d_uin_s_level2, d_uout_s_level2 = map(cuda.to_device, (uin_s_level2, uout_s_leve
 
 movement = 1 #y movement
 iii2 = 0
-
+state = GridState(
+    x_s, X_s, x_s2,
+    y_s, Y_s, y_s2,
+    x_s_level2, X_s_level2, x_s2_level2,
+    y_s_level2, Y_s_level2, y_s2_level2,
+    x_lin, X_lin, y_lin, Y_lin,
+)
 
 
 
@@ -710,8 +692,11 @@ for layers in range(num_layers):
 
 
     if layers > 0 :
-        resety_all(y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0 )
-        resetx_all(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0 )
+
+        state.reset_y(y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0)
+        state.reset_x(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0)
+
+
         xminn = float_type(x_lin[0]); yminn = float_type(y_lin[0]); zminn = float_type(z_lin[0])
         xmin_level2 = float_type(x_s_level2[0]); ymin_level2 = float_type(y_s_level2[0]); zmin_level2 = float_type(z_s_level2[0])
         
@@ -883,7 +868,7 @@ for layers in range(num_layers):
         
         ### Move Grid and update variables  ###
     
-            move_gridy_all(velocity, iii)
+            state.move_y(velocity, iii)
             
             update_after_movementy2(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_iny, slice_1d_out=slice_1d_outy, index_y=index_y, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)
             update_after_movementy2(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y, slice_1d_out=slice_1d_out_level2y, index_y=index_y_level2, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)
@@ -915,7 +900,7 @@ for layers in range(num_layers):
             
             ### Move Grid and update variables  ###
     
-                move_gridy_all(-velocity, iii)
+                state.move_y(velocity, iii)
                                                 
                 update_after_movementy2_negative(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_iny_negative, slice_1d_out=slice_1d_outy_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)                                                
                 update_after_movementy2_negative(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y_negative, slice_1d_out=slice_1d_out_level2y_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)                                                      
@@ -948,7 +933,7 @@ for layers in range(num_layers):
         
         ### Move Grid and update variables  ###
     
-            move_gridx_all(velocity, iii)
+            state.move_x(velocity, iii)
             
             update_after_movementx2(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_inx, slice_1d_out=slice_1d_outx, index_x=index_x, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
             update_after_movementx2(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x, slice_1d_out=slice_1d_out_level2x, index_x=index_x_level2, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
@@ -979,7 +964,7 @@ for layers in range(num_layers):
             ### Move the Laser Source ###
             
             ### Move Grid and update variables  ###
-                move_gridx_all(-velocity, iii)
+                state.move_x(velocity, iii)
                 
                 update_after_movementx2_negative(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_inx_negative, slice_1d_out=slice_1d_outx_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
                 update_after_movementx2_negative(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x_negative, slice_1d_out=slice_1d_out_level2x_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
@@ -1128,8 +1113,10 @@ for layers in range(num_layers):
         qs_s *= 0
         qs_s_level2 *= 0
         
-        resety_all(y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0 )
-        resetx_all(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0 )
+        
+        state.reset_y(y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0)
+        state.reset_x(x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0)
+
         xminn = float_type(x_lin[0]); yminn = float_type(y_lin[0]); zminn = float_type(z_lin[0])
         xmin_level2 = float_type(x_s_level2[0]); ymin_level2 = float_type(y_s_level2[0]); zmin_level2 = float_type(z_s_level2[0])
     
