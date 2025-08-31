@@ -24,6 +24,7 @@ from hermes.runtime.movement import (
     update_after_movement_level3x_2,
     update_after_movement_level3x_2_negative,
 )
+from hermes.runtime.movement_varying_vel import GridUpdater, LevelRefs, Kernels
 from hermes.runtime.gpu_setup import  launch_3d, launch_bc
 from hermes.kernels.rhs import rhs_level3_dirichlet
 from hermes.kernels.rhs import rhs_level12_neumann
@@ -35,15 +36,12 @@ from hermes.runtime.state import GridState
 
 
 
-
-
 def len_dim(x): return x *  phys.len_scale      # [m]
 def len_um(x): return x *  phys.len_scale * 1e6    # [um]
 def shape_back_3d(u, nx, ny, nz): return cp.reshape(u, (nx, ny, nz), order='F')
 def temp_dim(u): return u * phys.deltaT + phys.Ts  # [K]
 def gaussian2d(x, y, sigma,x00,y00): return  phys.n1 * cp.exp(-2*((x-x00)**2 + (y-y00)**2) / ( (sigma)**2)) 
     
-
 
 
 def mv_wrapper_lin(v):
@@ -71,145 +69,6 @@ def sparse_cg(A, b, u0, TOL, P, maxit):
       return x,status,num_iters
           
 
-        
-
-### FUNCS FOR MOVING ###
-
-
-
-def update_grid_and_precompute(velocity):
-    global index_y_lin, index_x_lin, index_y_lin_neg, index_x_lin_neg
-    global slice_1d_in_liny, slice_1d_out_liny, slice_1d_in_linx, slice_1d_out_linx
-    global slice_1d_in_linx_negative, slice_1d_out_linx_negative
-    global slice_1d_in_liny_negative, slice_1d_out_liny_negative
-    global index_y_level2, index_x_level2, index_y_neg_level2, index_x_neg_level2
-    global slice_1d_in_level2y, slice_1d_out_level2y, slice_1d_in_level2x, slice_1d_out_level2x
-    global slice_1d_in_level2x_negative, slice_1d_out_level2x_negative
-    global slice_1d_in_level2y_negative, slice_1d_out_level2y_negative
-    global index_y, index_x, index_y_neg, index_x_neg
-    global slice_1d_iny, slice_1d_outy, slice_1d_inx, slice_1d_outx
-    global slice_1d_inx_negative, slice_1d_outx_negative
-    global slice_1d_iny_negative, slice_1d_outy_negative
-    global xminn, yminn, zminn
-    global xmin_level2, ymin_level2, zmin_level2
-    global uin_s, uout_s, ny_s_in, ny_s_out, nx_s_in, nx_s_out
-    global xoldmin_s, yoldmin_s, zoldmin_s
-    global blocks_per_grid_in_s_y, blocks_per_grid_out_s_y
-    global blocks_per_grid_in_s_x, blocks_per_grid_out_s_x
-    global threads_per_block_in_s_y, threads_per_block_out_s_y
-    global threads_per_block_in_s_x, threads_per_block_out_s_x
-    global uin_s_level2, uout_s_level2, ny_s_in_level2, ny_s_out_level2
-    global nx_s_in_level2, nx_s_out_level2
-    global xoldmin_s_level2, yoldmin_s_level2, zoldmin_s_level2
-    global blocks_per_grid_in_s_level2_y, blocks_per_grid_out_s_level2_y
-    global blocks_per_grid_in_s_level2_x, blocks_per_grid_out_s_level2_x
-    global threads_per_block_in_s_level2_y, threads_per_block_out_s_level2_y
-    global threads_per_block_in_s_level2_x, threads_per_block_out_s_level2_x
-    global uin_lin, uout_lin, ny_lin_in, ny_lin_out
-    global nx_lin_in, nx_lin_out
-    global xoldmin_lin, yoldmin_lin, zoldmin_lin
-    global blocks_per_grid_in_lin_y, blocks_per_grid_out_lin_y
-    global blocks_per_grid_in_lin_x, blocks_per_grid_out_lin_x
-    global threads_per_block_in_lin_y, threads_per_block_out_lin_y
-    global threads_per_block_in_lin_x, threads_per_block_out_lin_x
-    
-    ### FOR THE GRID MOVEMENT ###
-
-    ## LEVEL 3: FIND THE CELLS FALL INSIDE AND OUTSIDE AFTER EVERY MOVEMENT ##
-    (
-        index_y_lin, index_x_lin, index_y_lin_neg, index_x_lin_neg, 
-        slice_1d_in_liny, slice_1d_out_liny, slice_1d_in_linx, slice_1d_out_linx, 
-        slice_1d_in_linx_negative, slice_1d_out_linx_negative, 
-        slice_1d_in_liny_negative, slice_1d_out_liny_negative
-    ) = grid_movement_index(x_lin0, y_lin0, velocity, nx_lin, ny_lin, nz_lin, t_len = len(t_vals_lin))
-
-    ## LEVEL 2: FIND THE CELLS FALL INSIDE AND OUTSIDE AFTER EVERY MOVEMENT ##
-    (
-        index_y_level2, index_x_level2, index_y_neg_level2, index_x_neg_level2, 
-        slice_1d_in_level2y, slice_1d_out_level2y, slice_1d_in_level2x, slice_1d_out_level2x, 
-        slice_1d_in_level2x_negative, slice_1d_out_level2x_negative, 
-        slice_1d_in_level2y_negative, slice_1d_out_level2y_negative
-    ) = grid_movement_index(x_s0_level2, y_s0_level2, velocity, nx_s_level2, ny_s_level2, nz_s_level2, t_len = len(t_vals_lin))
-
-    ## LEVEL 1: FIND THE CELLS FALL INSIDE AND OUTSIDE AFTER EVERY MOVEMENT ##
-    (
-        index_y, index_x, index_y_neg, index_x_neg, 
-        slice_1d_iny, slice_1d_outy, slice_1d_inx, slice_1d_outx, 
-        slice_1d_inx_negative, slice_1d_outx_negative, 
-        slice_1d_iny_negative, slice_1d_outy_negative
-    ) = grid_movement_index(x_s0, y_s0, velocity, nx_s, ny_s, nz_s, t_len = len(t_vals_lin))
-
-    ### Pre-Compute for update ###
-    xminn = float_type(x_lin[0].get())
-    yminn = float_type(y_lin[0].get())
-    zminn = float_type(z_lin[0].get())
-    
-    xmin_level2 = float_type(x_s_level2[0].get())
-    ymin_level2 = float_type(y_s_level2[0].get())
-    zmin_level2 = float_type(z_s_level2[0].get())
-
-    pre_s = precompute_for_update(u_s, nx_s, ny_s, nz_s, y_s, index_y, x_s, index_x, slice_1d_iny, slice_1d_outy, z_s, float_type=float_type)
-    uin_s                   = pre_s["u_in"]
-    uout_s                  = pre_s["u_out"]
-    ny_s_in                 = pre_s["ny_in"]
-    ny_s_out                = pre_s["ny_out"]
-    nx_s_in                 = pre_s["nx_in"]
-    nx_s_out                = pre_s["nx_out"]
-    xoldmin_s               = pre_s["xoldmin"]
-    yoldmin_s               = pre_s["yoldmin"]
-    zoldmin_s               = pre_s["zoldmin"]
-    blocks_per_grid_in_s_y  = pre_s["blocks_in_y"]
-    blocks_per_grid_out_s_y = pre_s["blocks_out_y"]
-    blocks_per_grid_in_s_x  = pre_s["blocks_in_x"]
-    blocks_per_grid_out_s_x = pre_s["blocks_out_x"]
-    threads_per_block_in_s_y  = pre_s["tpbin"]
-    threads_per_block_out_s_y = pre_s["tpbout"]
-    threads_per_block_in_s_x  = pre_s["tpbin_x"]
-    threads_per_block_out_s_x = pre_s["tpbout_x"]
-
-    pre_s_level2 = precompute_for_update(u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, y_s_level2, index_y_level2, x_s_level2, index_x_level2, slice_1d_in_level2y, slice_1d_out_level2y, z_s_level2, float_type=float_type)
-    uin_s_level2                   = pre_s_level2["u_in"]
-    uout_s_level2                  = pre_s_level2["u_out"]
-    ny_s_in_level2                 = pre_s_level2["ny_in"]
-    ny_s_out_level2                = pre_s_level2["ny_out"]
-    nx_s_in_level2                 = pre_s_level2["nx_in"]
-    nx_s_out_level2                = pre_s_level2["nx_out"]
-    xoldmin_s_level2               = pre_s_level2["xoldmin"]
-    yoldmin_s_level2               = pre_s_level2["yoldmin"]
-    zoldmin_s_level2               = pre_s_level2["zoldmin"]
-    blocks_per_grid_in_s_level2_y  = pre_s_level2["blocks_in_y"]
-    blocks_per_grid_out_s_level2_y = pre_s_level2["blocks_out_y"]
-    blocks_per_grid_in_s_level2_x  = pre_s_level2["blocks_in_x"]
-    blocks_per_grid_out_s_level2_x = pre_s_level2["blocks_out_x"]
-    threads_per_block_in_s_level2_y  = pre_s_level2["tpbin"]
-    threads_per_block_out_s_level2_y = pre_s_level2["tpbout"]
-    threads_per_block_in_s_level2_x  = pre_s_level2["tpbin_x"]
-    threads_per_block_out_s_level2_x = pre_s_level2["tpbout_x"]
-
-    pre_lin = precompute_for_update(u_lin, nx_lin, ny_lin, nz_lin, y_lin, index_y_lin, x_lin, index_x_lin, slice_1d_in_liny, slice_1d_out_liny, z_lin, float_type=float_type)
-    uin_lin                   = pre_lin["u_in"]
-    uout_lin                  = pre_lin["u_out"]
-    ny_lin_in                 = pre_lin["ny_in"]
-    ny_lin_out                = pre_lin["ny_out"]
-    nx_lin_in                 = pre_lin["nx_in"]
-    nx_lin_out                = pre_lin["nx_out"]
-    xoldmin_lin               = pre_lin["xoldmin"]
-    yoldmin_lin               = pre_lin["yoldmin"]
-    zoldmin_lin               = pre_lin["zoldmin"]
-    blocks_per_grid_in_lin_y  = pre_lin["blocks_in_y"]
-    blocks_per_grid_out_lin_y = pre_lin["blocks_out_y"]
-    blocks_per_grid_in_lin_x  = pre_lin["blocks_in_x"]
-    blocks_per_grid_out_lin_x = pre_lin["blocks_out_x"]
-    threads_per_block_in_lin_y  = pre_lin["tpbin"]
-    threads_per_block_out_lin_y = pre_lin["tpbout"]
-    threads_per_block_in_lin_x  = pre_lin["tpbin_x"]
-    threads_per_block_out_lin_x = pre_lin["tpbout_x"]
-
-    ### Pre-Compute for update ###
-
-### FUNCS FOR MOVING ###
-
-
 
 use_double_precision = True 
 if use_double_precision:
@@ -217,11 +76,6 @@ if use_double_precision:
 else:
     float_type = cp.float32
 
-
-
-
-### FUNCS FOR MOVING ###
-#############################################################        
 
 
 time_multip = 1/4
@@ -674,6 +528,13 @@ state = GridState(
 )
 
 
+level1 = LevelRefs(u_s, x_s, y_s, z_s, nx_s, ny_s, nz_s, x_s0, y_s0)
+level2 = LevelRefs(u_s_level2, x_s_level2, y_s_level2, z_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, x_s0_level2, y_s0_level2)
+lin    = LevelRefs(u_lin, x_lin, y_lin, z_lin, nx_lin, ny_lin, nz_lin, x_lin0, y_lin0)
+
+kernels = Kernels(grid_movement_index, precompute_for_update)
+pre = GridUpdater(level1, level2, lin, kernels, float_type=float_type, t_len=len(t_vals_lin))
+
 
 
 for layers in range(num_layers):
@@ -784,11 +645,13 @@ for layers in range(num_layers):
     
         ttt += dt_lin*phys.time_scale*1e3
         if velocity != velocity0:
+
             velocity0 = velocity
-    
-            update_grid_and_precompute(velocity)
+            pre.update(velocity)           
+            globals().update(pre.as_globals())
             print('velocity updated at iii = ', iii)
             # print(index_y, 'is index_y')
+            
             d_u_lin = cuda.to_device(u_lin)
             d_p_o = cuda.to_device(p_o)
             d_p_i = cuda.to_device(p_i)
