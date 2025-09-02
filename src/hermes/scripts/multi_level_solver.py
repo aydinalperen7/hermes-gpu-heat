@@ -5,7 +5,7 @@
 """
 
 import cupy as cp
-import cupyx.scipy.sparse.linalg as spla
+import cupyx.scipy.sparse.linalg as cspla
 from numba import cuda
 
 
@@ -32,6 +32,8 @@ from hermes.kernels.matvec import mv_level3_dirichlet, mv_level12_neumann
 from hermes.kernels.bc import extract_neumann_bc_r_l_i_o, extract_neumann_bc_b
 from hermes.kernels.interp import  trilinear_interpolation
 from hermes.runtime.state import GridState
+from pathlib import Path
+from hermes.runtime.config import load_config
 
 
 
@@ -65,7 +67,7 @@ def sparse_cg(A, b, u0, TOL, P, maxit):
          nonlocal num_iters
          num_iters+=1
 
-      x,status = spla.cg(A, b, x0=u0, tol=TOL, M=P, maxiter = maxit, callback=callback)
+      x,status = cspla.cg(A, b, x0=u0, tol=TOL, M=P, maxiter = maxit, callback=callback)
       return x,status,num_iters
           
 
@@ -78,19 +80,66 @@ else:
 
 
 
-time_multip = 1/4
-time_step = 108
   
-  
-  
-Q = 150;   x_span_m = 50e-6;  v = 1.0; x00_initial , y00_initial = 0 , 0 #(Initial laser pos);    #-- LASER INPUTS; USER INPUT
+# Q = 150;   x_span_m = 50e-6;  v = 1.0; x00_initial_m , y00_initial_m = 0 , 0 #(Initial laser pos);    #-- LASER INPUTS; USER INPUT
+# lxd_level3 = 96*50e-6; lyd_level3 = 96*50e-6; lzd_level3 = 48*50e-6; h_level3 = 18.75e-6 #-- USER INPUT FOR LEVEL 3
+# lxd_level1 = 12*50e-6; lyd_level1 = 12*50e-6; lzd_level1 = 6*50e-6; h_level1_factor = 4.0 #-- USER INPUT FOR LEVEL 1
+# lxd_level2_m = 20 * 50e-6 ; lyd_level2_m = 20 * 50e-6 ; lzd_level2_m = 10 * 50e-6 ; h_level2_factor = 2.0 #-- USER INPUT FOR LEVEL 2
+num_layers = 7; layer_thickness = 50e-6 ### -- USER INPUT FPR MULTI-LAYER
+
+
+
+
+# --- Load configuration file  ---
+project_root = Path(__file__).resolve().parents[3]
+config_path = project_root / "configs" / "sim.ini"
+rc = load_config(config_path)
+# ---------- LASER INPUTS ----------
+Q = rc.laser.Q
+x_span_m = rc.laser.x_span_m
+v = rc.laser.v
+x00_initial_m = rc.laser.x00_initial
+y00_initial_m = rc.laser.y00_initial
+t_span_s = rc.laser.t_spot_on  # if you use it later
+
+# Optional: material parameters (defaults to 316L if no overrides)
+mat_override = rc.material.to_override_dict()
+
+# ---------- LEVEL 3 (base/outer) ----------
+lxd_level3 = rc.level3.lxd
+lyd_level3 = rc.level3.lyd
+lzd_level3 = rc.level3.lzd
+h_level3 = rc.level3.h_tuple[0]    # spacing (meters, isotropic assumed)
+
+# ---------- LEVEL 1 (inner/fine) ----------
+lxd_level1 = rc.level1.lxd
+lyd_level1 = rc.level1.lyd
+lzd_level1 = rc.level1.lzd
+h_level1 = rc.level1.h_tuple[0]
+h_level1_factor = h_level3 / h_level1   # matches your old convention
+
+# ---------- LEVEL 2 (intermediate) ----------
+lxd_level2_m = rc.level2.lxd
+lyd_level2_m = rc.level2.lyd
+lzd_level2_m = rc.level2.lzd
+h_level2 = rc.level2.h_tuple[0]
+h_level2_factor = h_level3 / h_level2
+
+
+
+
+
+
+
 
 
 ### PHYSICAL PARAMETERS ### --COMPUTE BASED ON USER INPUT
 t_span_s = 2 * x_span_m / v
-phys = phys_parameter( Q, x_span_m, t_span_s )
+phys = phys_parameter( Q, x_span_m, t_span_s, mat_ch=mat_override )
 x_span = float_type(x_span_m / phys.len_scale)
 t_span = float_type(t_span_s / phys.time_scale)
+x00_initial = float_type(x00_initial_m / phys.time_scale)
+y00_initial = float_type(y00_initial_m / phys.time_scale)
 Ste    = float_type(phys.Ste)
 iSte   = float_type(1.0 / Ste)
 n1     = float_type(phys.n1)
@@ -104,7 +153,6 @@ ttt = 0 # Starting time
 ### PHYSICAL PARAMETERS ### --COMPUTE BASED ON USER INPUT
 
 
-lxd_level3 = 96*50e-6; lyd_level3 = 96*50e-6; lzd_level3 = 48*50e-6; h_level3 = 18.75e-6 #-- USER INPUT FOR LEVEL 3
 
 ###  -- COMPUTE BASED ON USER INPUT
 outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, cp)
@@ -143,7 +191,6 @@ Y_lin0, X_lin0 = Y_lin.copy(), X_lin.copy()
 
 
 
-lxd_level1 = 12*50e-6; lyd_level1 = 12*50e-6; lzd_level1 = 6*50e-6; h_level1_factor = 4.0 #-- USER INPUT FOR LEVEL 1
 to_code = lambda Lm: float_type(Lm / phys.len_scale)
 
 ###  -- COMPUTE BASED ON USER INPUT; Initialize Level 1
@@ -195,7 +242,6 @@ nx_s2, ny_s2, nz_s2  = nx_s +2, ny_s+2, nz_s +1
 ###  -- COMPUTE BASED ON USER INPUT; Initialize Level 1
 
 
-lxd_level2_m = 20 * 50e-6 ; lyd_level2_m = 20 * 50e-6 ; lzd_level2_m = 10 * 50e-6 ; h_level2_factor = 2.0 #-- USER INPUT FOR LEVEL 2
 
 
 ###  -- COMPUTE BASED ON USER INPUT; Initialize Level 2
@@ -427,9 +473,9 @@ d_result_lin = cuda.to_device(result_lin)
 d_result_s = cuda.to_device(result_s)
 d_result_s_level2 = cuda.to_device(result_s_level2)
 
-Alinear_lin = spla.LinearOperator((nx_lin*ny_lin*nz_lin , nx_lin*ny_lin*nz_lin), matvec=mv_wrapper_lin)
-Alinear_s = spla.LinearOperator((nx_s*ny_s*nz_s, nx_s*ny_s*nz_s), matvec=mv_wrapper_s)
-Alinear_s_level2  = spla.LinearOperator((nx_s_level2 *ny_s_level2 *nz_s_level2 , nx_s_level2 *ny_s_level2 *nz_s_level2 ), matvec=mv_wrapper_s_level2 )
+Alinear_lin = cspla.LinearOperator((nx_lin*ny_lin*nz_lin , nx_lin*ny_lin*nz_lin), matvec=mv_wrapper_lin)
+Alinear_s = cspla.LinearOperator((nx_s*ny_s*nz_s, nx_s*ny_s*nz_s), matvec=mv_wrapper_s)
+Alinear_s_level2  = cspla.LinearOperator((nx_s_level2 *ny_s_level2 *nz_s_level2 , nx_s_level2 *ny_s_level2 *nz_s_level2 ), matvec=mv_wrapper_s_level2 )
 ### MATVECS FOR LEVEL 3, 1 AND 2 ###
 
 
@@ -444,7 +490,6 @@ u_s_old = u_s.copy()
 
 
 ### For multi-layer ###
-num_layers = 7; layer_thickness = 50e-6 ### -- USER INPUT
 
 ### For multi-layer ### -- COMPUTED BASED ON USER INPUT
 lt_sc = float_type(float_type(layer_thickness)/phys.len_scale) #layer_thickness scaled
@@ -913,6 +958,13 @@ for layers in range(num_layers):
     
         iii2 += 1
         
+
+        
+        if iii == 200:
+            break
+        
+
+        
         
 
         
@@ -1034,8 +1086,9 @@ for layers in range(num_layers):
             
             ### Exract BC from previous time step for Level 2 ###
             trilinear_interpolation[blocks_per_grid_s_int1, threads_per_block_int1](x_s2_level2, y_s2_level2, z_s2_level2, u_lin, nx_lin, ny_lin, nz_lin, h_lin, h_lin, h_lin, xminn, yminn, zminn, nx_s2_level2, ny_s2_level2, nz_s2_level2, uinteold_level2, 1)  
-            extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](uinteold_level2, nx_s_level2, nz_s_level2, ny_s_level2, p_r_old_level2, p_l_old_level2 ,  p_o_old_level2, p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
-            extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](uinteold_level2, ny_s_level2, nx_s_level2, p_b_old_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
+            extract_neumann_bc_r_l_i_o[blocks_per_grid_s_bc1, threads_per_block_bc1](nx_s_level2, ny_s_level2, nz_s_level2, uinteold_level2, p_r_old_level2, p_l_old_level2 ,  p_o_old_level2, p_i_old_level2, slice_bc_out0_1d_level2, slice_bc_in0_1d_level2, slice_bc_right0_1d_level2, slice_bc_left0_1d_level2,  nx_s2_level2)
+            extract_neumann_bc_b[blocks_per_grid_s_bc2, threads_per_block_bc2](nx_s_level2, ny_s_level2, uinteold_level2, p_b_old_level2, slice_bc_bottom0_1d_level2, nx_s2_level2, ny_s2_level2)
+
             ### Exract BC from previous time step for Level 2 ###
         
             ### Solve the 3rd Level ###
