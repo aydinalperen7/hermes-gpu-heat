@@ -7,7 +7,7 @@
 import cupy as cp
 import cupyx.scipy.sparse.linalg as cspla
 from numba import cuda
-
+import argparse
 
 from hermes.physics.material import phys_parameter
 from hermes.grids.sim_params import init_level3_outer
@@ -91,9 +91,26 @@ num_layers = 7; layer_thickness = 50e-6 ### -- USER INPUT FPR MULTI-LAYER
 
 
 # --- Load configuration file  ---
+
+
+# Parse CLI args
+parser = argparse.ArgumentParser(description="HERMES multi-level solver")
+parser.add_argument("--config", type=str, default=None, help="Path to sim.ini file")
+args = parser.parse_args()
+
+# Project root (repo root = 3 levels up from scripts/)
 project_root = Path(__file__).resolve().parents[3]
-config_path = project_root / "configs" / "sim.ini"
+
+# If user gave --config use it, otherwise default to configs/sim.ini
+if args.config is not None:
+    config_path = Path(args.config).resolve()
+else:
+    config_path = project_root / "configs" / "sim.ini"
+
+
 rc = load_config(config_path)
+
+
 # ---------- LASER INPUTS ----------
 Q = rc.laser.Q
 x_span_m = rc.laser.x_span_m
@@ -159,12 +176,10 @@ if rc.time.CFL is not None:
     # CFL-based timestep
     dt_lin_s = (rc.time.CFL * h_level1**2) / phys.kappa    # physical seconds
     dt_lin = dt_lin_s / phys.time_scale                    # nondimensional
-    print('dt_lin cfl = ', dt_lin)
 elif rc.time.dt is not None:
     # direct dt given
     dt_lin_s = rc.time.dt
     dt_lin = dt_lin_s / phys.time_scale
-    print('dt_lin sec = ', dt_lin)
 else:
     raise ValueError("You must specify either [time].CFL or [time].dt in sim.ini")
 dt_lin05 = 0.5*dt_lin
@@ -992,7 +1007,6 @@ for layers in range(num_layers):
     
         iii2 += 1
         
-        print('cp.mean(u_s) = ', cp.mean(u_s), 'at iii = ', iii)
         
         if iii == target_step:
             break
