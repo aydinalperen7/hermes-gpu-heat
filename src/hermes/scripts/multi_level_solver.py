@@ -589,7 +589,7 @@ print('movement_x= ', movement_x)
 if rc.time.end_time_s is not None:
     target_step = int(round((rc.time.end_time_s / phys.time_scale) / dt_lin)) - 1
 elif rc.time.scan_length_m is not None:
-    target_step = int(round(rc.time.scan_length_m / (rc.laser.v * phys.len_scale)))
+    target_step = int(round(rc.time.scan_length_m / (rc.laser.v * phys.len_scale))) - 1 
 else:
     target_step = int(round(1e-3 / (velocity * phys.len_scale)))
     print('Scan distance or end time is not provided, set to 1mm scan by default')
