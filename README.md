@@ -56,6 +56,10 @@ export PYTHONPATH="/work/09143/halperen/vista/HERMES/src:$PYTHONPATH"
 ## Configuration
 Simulation parameters are controlled by `configs/sim.ini`.
 ## Running
+From the repo root, first move into the `scripts/` directory:
+```bash
+cd src/hermes/scripts
+```
 - Default run (uses `configs/sim.ini`):
 ```bash
 python3 multi_level_solver.py --config /path/to/other.ini
