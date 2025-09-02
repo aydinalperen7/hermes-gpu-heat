@@ -100,7 +100,8 @@ x_span_m = rc.laser.x_span_m
 v = rc.laser.v
 x00_initial_m = rc.laser.x00_initial
 y00_initial_m = rc.laser.y00_initial
-t_span_s = rc.laser.t_spot_on  # if you use it later
+movement_x = rc.movement.x   # -1, 0, or 1
+movement_y = rc.movement.y   # -1, 0, or 1
 
 # Optional: material parameters (defaults to 316L if no overrides)
 mat_override = rc.material.to_override_dict()
@@ -562,7 +563,6 @@ d_uin_s_level2, d_uout_s_level2 = map(cuda.to_device, (uin_s_level2, uout_s_leve
 ### CREATE CUDA ARRAYS ###
 
 
-movement = 1 #y movement
 iii2 = 0
 state = GridState(
     x_s, X_s, x_s2,
@@ -580,6 +580,21 @@ lin    = LevelRefs(u_lin, x_lin, y_lin, z_lin, nx_lin, ny_lin, nz_lin, x_lin0, y
 kernels = Kernels(grid_movement_index, precompute_for_update)
 pre = GridUpdater(level1, level2, lin, kernels, float_type=float_type, t_len=len(t_vals_lin))
 
+initial_move_y = movement_y
+initial_move_x = movement_x
+
+print('movement_y = ', movement_y)
+print('movement_x= ', movement_x)
+
+if rc.time.end_time_s is not None:
+    target_step = int(round((rc.time.end_time_s / phys.time_scale) / dt_lin)) - 1
+elif rc.time.scan_length_m is not None:
+    target_step = int(round(rc.time.scan_length_m / (rc.laser.v * phys.len_scale)))
+else:
+    target_step = int(round(1e-3 / (velocity * phys.len_scale)))
+    print('Scan distance or end time is not provided, set to 1mm scan by default')
+
+
 
 
 for layers in range(num_layers):
@@ -587,7 +602,8 @@ for layers in range(num_layers):
     
     
     cntrr = 0
-    movement = 1
+    movement_x = initial_move_x
+    movement_y = initial_move_y
     y00 = y00_initial
     x00 = x00_initial
     
@@ -769,7 +785,7 @@ for layers in range(num_layers):
             d_uinteold = cuda.to_device(uinteold)
             d_uinteold_level2 = cuda.to_device(uinteold_level2)
     
-        if movement==1 and iii and velocity : # means y-movement in + dir
+        if movement_y==1 and iii and velocity : # means y-movement in + dir
         ### Move the Laser Source ###
             y00 += velocity
         ### Move the Laser Source ###
@@ -801,7 +817,7 @@ for layers in range(num_layers):
             ### New min coords for interpolation ###
         
         ### Move Grid and update variables  ###
-        elif  movement == 3 and iii and velocity:  # means y-movement in - dir
+        elif  movement_y == -1 and iii and velocity:  # means y-movement in - dir
             ### Move the Laser Source ###
                 y00 -= velocity
             ### Move the Laser Source ###
@@ -834,7 +850,7 @@ for layers in range(num_layers):
     
             
         ### Move Grid and update variables###
-        elif movement == 2 and iii and velocity: # means x-movement in + dir
+        elif movement_x == 1 and iii and velocity: # means x-movement in + dir
         ### Move the Laser Source ###
             x00 += velocity
         ### Move the Laser Source ###
@@ -866,7 +882,7 @@ for layers in range(num_layers):
             ### New min coords for interpolation ###
             
         ### Move Grid and update variables  ###
-        elif  movement == 4 and iii and velocity: # means x-movement in - dir
+        elif  movement_x == -1 and iii and velocity: # means x-movement in - dir
             ### Move the Laser Source ###
                 x00 -= velocity
             ### Move the Laser Source ###
@@ -960,7 +976,7 @@ for layers in range(num_layers):
         
 
         
-        if iii == 200:
+        if iii == target_step:
             break
         
 
