@@ -150,17 +150,34 @@ n4     = float_type(phys.n4)
 n5     = float_type(phys.n5)
 n6     = float_type(phys.n6)
 u0     = float_type(phys.u0)
-ttt = 0 # Starting time
+kappa = float_type(phys.kappa)
 ### PHYSICAL PARAMETERS ### --COMPUTE BASED ON USER INPUT
 
 
+### TIME STEP SIZE ### --COMPUTE BASED ON USER INPUT
+if rc.time.CFL is not None:
+    # CFL-based timestep
+    dt_lin_s = (rc.time.CFL * h_level1**2) / phys.kappa    # physical seconds
+    dt_lin = dt_lin_s / phys.time_scale                    # nondimensional
+    print('dt_lin cfl = ', dt_lin)
+elif rc.time.dt is not None:
+    # direct dt given
+    dt_lin_s = rc.time.dt
+    dt_lin = dt_lin_s / phys.time_scale
+    print('dt_lin sec = ', dt_lin)
+else:
+    raise ValueError("You must specify either [time].CFL or [time].dt in sim.ini")
+dt_lin05 = 0.5*dt_lin
+ttt = 0 # Starting time
+### TIME STEP SIZE ### --COMPUTE BASED ON USER INPUT
+
 
 ###  -- COMPUTE BASED ON USER INPUT
-outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, cp)
+outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, dt_lin, cp)
 nx_lin = outer["sp"].nx; ny_lin = outer["sp"].ny; nz_lin = outer["sp"].nz
 x_lin, y_lin, z_lin = outer["x_lin"], outer["y_lin"], outer["z_lin"]
-dt_lin, h_lin = outer["dt_lin"], outer["h_lin"]
-h_linisq, dt_lin05 = outer["h_linisq"], outer["dt_lin05"]
+h_lin = outer["h_lin"]
+h_linisq = outer["h_linisq"]
 u_lin, u_new_lin, b_lin = outer["u_lin"], outer["u_new_lin"], outer["b_lin"]
 t_vals_lin = outer["t_vals_lin"]
 x_lin0 = x_lin.copy()
@@ -171,6 +188,7 @@ velocity0 = velocity
 
 ###  -- COMPUTE BASED ON USER INPUT
 
+print('dt_lin  = ', dt_lin)
 
 
 ###  -- COMPUTE BASED ON USER INPUT
@@ -974,7 +992,7 @@ for layers in range(num_layers):
     
         iii2 += 1
         
-
+        print('cp.mean(u_s) = ', cp.mean(u_s), 'at iii = ', iii)
         
         if iii == target_step:
             break
