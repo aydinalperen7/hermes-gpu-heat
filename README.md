@@ -69,7 +69,7 @@ python3 multi_level_solver.py --config /path/to/other.ini
 - Default material: 316L stainless steel
 - Units: m, mm, um, nm are supported in config
 - Timestep: choose either CFL or dt (not both)
-- Nested grids: Level-3 (outer) → Level-2 → Level-1
+- Nested grids: Level 3 (outer) → Level 2 → Level 1
 
 
 ## Author
