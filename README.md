@@ -62,7 +62,7 @@ cd src/hermes/scripts
 ```
 - Default run (uses `configs/sim.ini`):
 ```bash
-python3 multi_level_solver.py --config /path/to/other.ini
+python3 multi_level_solver.py
 ```
 -  Custom config:
 ```bash
