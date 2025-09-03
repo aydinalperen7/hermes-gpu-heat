@@ -32,8 +32,10 @@ from hermes.kernels.matvec import mv_level3_dirichlet, mv_level12_neumann
 from hermes.kernels.bc import extract_neumann_bc_r_l_i_o, extract_neumann_bc_b
 from hermes.kernels.interp import  trilinear_interpolation
 from hermes.runtime.state import GridState
-from pathlib import Path
 from hermes.runtime.config import load_config
+from hermes.post.snapshot import save_arrays_npz
+
+from pathlib import Path
 
 
 
@@ -85,7 +87,7 @@ else:
 # lxd_level3 = 96*50e-6; lyd_level3 = 96*50e-6; lzd_level3 = 48*50e-6; h_level3 = 18.75e-6 #-- USER INPUT FOR LEVEL 3
 # lxd_level1 = 12*50e-6; lyd_level1 = 12*50e-6; lzd_level1 = 6*50e-6; h_level1_factor = 4.0 #-- USER INPUT FOR LEVEL 1
 # lxd_level2_m = 20 * 50e-6 ; lyd_level2_m = 20 * 50e-6 ; lzd_level2_m = 10 * 50e-6 ; h_level2_factor = 2.0 #-- USER INPUT FOR LEVEL 2
-num_layers = 7; layer_thickness = 50e-6 ### -- USER INPUT FPR MULTI-LAYER
+# num_layers = 7; layer_thickness = 50e-6 ### -- USER INPUT FOR MULTI-LAYER
 
 
 
@@ -111,6 +113,52 @@ else:
 rc = load_config(config_path)
 
 
+run_dir = Path(rc.output.dir) / rc.output.tag
+snap_dir = run_dir / "snapshots"
+
+do_stride = rc.output.save_stride > 0
+do_explicit = bool(rc.output.save_steps)
+do_final = rc.output.final_only
+
+
+# --- Precompute a fast decision function for post processing ---
+if not do_stride and not do_explicit:
+    # only final step
+    def should_save_step(step: int, last_step: int) -> bool:
+        return do_final and step == last_step
+else:
+    def should_save_step(step: int, last_step: int) -> bool:
+        if do_final and step == last_step:
+            return True
+        if do_stride and (step % rc.output.save_stride == 0):
+            return True
+        if do_explicit and (step in rc.output.save_steps):
+            return True
+        return False
+
+if rc.output.format == "npy":
+    def save_step(step, arrays: dict):
+        base = f"step_{step:06d}"
+        for k, v in arrays.items():
+            cp.save(str(snap_dir / f"{base}_{k}.npy"), v)
+elif rc.output.format == "npz":
+    def save_step(step, arrays: dict):
+        base = f"step_{step:06d}"
+        save_arrays_npz(
+            snap_dir / f"{base}.npz",
+            arrays,
+            compress=rc.output.compress,
+        )
+else:
+    raise ValueError(f"Unknown output format: {rc.output.format}")
+# --- Precompute a fast decision function for post processing ---
+
+        
+
+
+
+
+
 # ---------- LASER INPUTS ----------
 Q = rc.laser.Q
 x_span_m = rc.laser.x_span_m
@@ -122,6 +170,10 @@ movement_y = rc.movement.y   # -1, 0, or 1
 
 # Optional: material parameters (defaults to 316L if no overrides)
 mat_override = rc.material.to_override_dict()
+
+# Mult-layer
+num_layers = rc.layers.num_layers
+layer_thickness = rc.layers.layer_thickness
 
 # ---------- LEVEL 3 (base/outer) ----------
 lxd_level3 = rc.level3.lxd
@@ -1006,6 +1058,15 @@ for layers in range(num_layers):
             u_s[:] = u_new_s.copy()
     
         iii2 += 1
+        
+        if should_save_step(iii, target_step):
+            save_step(iii, {
+                "u_s": u_s,
+                "u_s_old": u_s_old,
+                "x_s": x_s,
+                "y_s": y_s,
+                "z_s": z_s,
+            })
         
         
         if iii == target_step:
