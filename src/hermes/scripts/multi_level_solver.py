@@ -115,13 +115,18 @@ else:
 rc = load_config(config_path)
 
 
-run_dir = Path(rc.output.dir) / rc.output.tag
-snap_dir = run_dir / "snapshots"
+# run_dir = Path(rc.output.dir) / rc.output.tag
+# snap_dir = run_dir / "snapshots"
 
 do_stride = rc.output.save_stride > 0
 do_explicit = bool(rc.output.save_steps)
 do_final = rc.output.final_only
 
+if do_final or do_stride or do_explicit:
+    project_root = Path(__file__).resolve().parents[3]
+    out_dir = project_root / rc.output.dir / rc.output.tag / "snapshots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    snap_dir = out_dir
 
 # --- Precompute a fast decision function for post processing ---
 if not do_stride and not do_explicit:
@@ -682,7 +687,7 @@ print('movement_x= ', movement_x)
 if rc.time.end_time_s is not None:
     target_step = int(round((rc.time.end_time_s / phys.time_scale) / dt_lin)) - 1
 elif rc.time.scan_length_m is not None:
-    target_step = int(round(rc.time.scan_length_m / (rc.laser.v * phys.len_scale))) - 1 
+    target_step = int(round(rc.time.scan_length_m / (velocity * phys.len_scale))) - 1 
 else:
     target_step = int(round(1e-3 / (velocity * phys.len_scale)))
     print('Scan distance or end time is not provided, set to 1mm scan by default')
