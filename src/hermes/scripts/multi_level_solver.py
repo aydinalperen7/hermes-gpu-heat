@@ -34,6 +34,8 @@ from hermes.kernels.interp import  trilinear_interpolation
 from hermes.runtime.state import GridState
 from hermes.runtime.config import load_config
 from hermes.post.snapshot import save_arrays_npz
+from hermes.post.gr_metrics import compute_G_and_R_gpu
+
 
 from pathlib import Path
 
@@ -252,10 +254,8 @@ y_lin0 = y_lin.copy()
 z_lin0 = z_lin.copy()
 velocity = float_type(v / ( (phys.len_scale / phys.time_scale) / dt_lin)) 
 velocity0 = velocity
-
 ###  -- COMPUTE BASED ON USER INPUT
 
-print('dt_lin  = ', dt_lin)
 
 
 ###  -- COMPUTE BASED ON USER INPUT
@@ -547,6 +547,14 @@ blocks_per_grid_s_int1, threads_per_block_int1 = launch_3d(nx_s2_level2, ny_s2_l
 blocks_per_grid_s_int2, threads_per_block_int2 = launch_3d(nx_s2, ny_s2, nz_s2)
 blocks_per_grid_s_int3, threads_per_block_int3 = launch_3d(nx_s, ny_s, nz_s)
 blocks_per_grid_s_int4, threads_per_block_int4 = launch_3d(nx_s_level2, ny_s_level2, nz_s_level2)
+
+# Post-Processing G and R
+nx_si, ny_si, nz_si = nx_s-2, ny_s-2, nz_s-2
+Nint = nx_si*ny_si*nz_si
+threads_per_block_GR = 256
+blocks_per_grid_s_GR  = (Nint + threads_per_block_GR - 1)//threads_per_block_GR
+G_gpu = cp.empty((Nint,), dtype=u_s.dtype)
+R_gpu = cp.empty_like(G_gpu)
 ### GPU PARAMETERS ###  
 
 
@@ -1060,13 +1068,17 @@ for layers in range(num_layers):
         iii2 += 1
         
         if should_save_step(iii, target_step):
+            compute_G_and_R_gpu[blocks_per_grid_s_GR, threads_per_block_GR](u_s_old, u_s, nx_s, ny_s, nz_s,  dt_lin, h_x_new, h_y_new, h_z_new, 1e-12, G_gpu, R_gpu)
             save_step(iii, {
                 "u_s": u_s,
                 "u_s_old": u_s_old,
                 "x_s": x_s,
                 "y_s": y_s,
                 "z_s": z_s,
+                "G_flat": G_gpu,     
+                "R_flat": R_gpu,
             })
+            
         
         
         if iii == target_step:
