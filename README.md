@@ -99,9 +99,7 @@ options:
   --skip-G         Do not generate G surface VTK (even if G_flat exists).
   --skip-R         Do not generate R surface VTK (even if R_flat exists).
   --config CONFIG  Optional path to sim.ini. If omitted, tries PATH/sim.ini;
-                   else falls back to repo configs/sim.ini.
-                   
-
+                   else falls back to repo configs/sim.ini.                 
 ```
 **Important:**
 - `--config` must be the same `.ini` file used for the simulation run.
