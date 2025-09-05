@@ -89,6 +89,8 @@ It extracts:
 ```bash
 cd src/hermes/post/
 python3 surface_export.py --help
+```
+```text
 options:
   -h, --help       show this help message and exit
   --path PATH      Path to output tag dir (contains 'snapshots/'). Example: /abs/.../outputs/demo_run
@@ -98,6 +100,7 @@ options:
   --skip-R         Do not generate R surface VTK (even if R_flat exists).
   --config CONFIG  Optional path to sim.ini. If omitted, tries PATH/sim.ini; else falls back to repo
                    configs/sim.ini.
+
 ```
 **Important:**
 - `--config` must be the same `.ini` file used for the simulation run.
