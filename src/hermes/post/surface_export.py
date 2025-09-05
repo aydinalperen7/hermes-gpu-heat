@@ -6,7 +6,7 @@ Hermes post-process to VTK:
 - Reads PATH/snapshots/step_XXXXXX.{npz|npy}
 - Reconstructs u_s, x_s, y_s, z_s (Fortran order)
 - Builds phys from sim.ini via load_config -> phys_parameter
-- Finds deepest melt plane (u>1), extracts Ts isosurface, interpolates G/R
+- Finds deepest melt plane (u>1), extracts Tl isosurface, interpolates G/R
 - Writes:
     PATH/VTK/G/vtkG_step_XXXXXX.vtk      (unless --skip-G)
     PATH/VTK/R/vtkR_step_XXXXXX.vtk      (unless --skip-R)
@@ -170,10 +170,9 @@ def main():
     # ---- build phys from config (same as solver) ----
     rc = load_config(cfg_path)
     mat_override = rc.material.to_override_dict()
-    
     t_spot_on = 2 * rc.laser.x_span_m / rc.laser.v
     phys = phys_parameter(rc.laser.Q, rc.laser.x_span_m, t_spot_on, mat_ch=mat_override)
-    
+
     Ts = phys.Ts
     Tl = phys.Tl
     deltaT = phys.deltaT
@@ -220,7 +219,7 @@ def main():
         D = load_step(snapshot_dir, step)
 
         u_s      = D["u_s"]       # flat (Fortran order)
-        # u_s_old  = D["u_s_old"]
+        u_s_old  = D["u_s_old"]
         x_s      = D["x_s"]
         y_s      = D["y_s"]
         z_s      = D["z_s"]
@@ -272,12 +271,18 @@ def main():
         Tdim_cut = temp_dim(u3d_cut)
         verts, faces, normals, values = marching_cubes(
             Tdim_cut,
-            level=Ts,
+            level=Tl,
             spacing=(hx*len_scale, hy*len_scale, hz*len_scale),
         )
         verts[:, 0] += x_dim[0]
         verts[:, 1] += y_dim[0]
         verts[:, 2] += z_dim[0]
+
+        current_max_y = np.max(verts[:, 1])
+        common_max_y = 0
+        y_offset = common_max_y - current_max_y
+        verts_visual = verts.copy()
+        verts_visual[:, 1] += y_offset
 
         # Interior grids (for G/R interpolation)
         nx_i, ny_i, nz_i = nx - 2, ny - 2, nz - 2
@@ -295,7 +300,7 @@ def main():
             # Output G in K/μm: (ΔT / length)
             G_K_per_um = (G_vals * deltaT) / (len_scale * 5e6)
 
-            pts = tvtk.Points(); pts.from_array(verts)
+            pts = tvtk.Points(); pts.from_array(verts_visual)
             cells = tvtk.CellArray()
             for f in faces:
                 cells.insert_next_cell(len(f), f.tolist())
@@ -319,10 +324,10 @@ def main():
             R_interp = RegularGridInterpolator((x_i, y_i, z_i), R,
                                                bounds_error=False, fill_value=None)
             R_vals = R_interp(verts)  # nondim cooling rate along grad direction
-            # Output R in m/s
-            R_um_per_us = (R_vals * len_scale) / time_scale  # (μm/μs)
+            # Output R in m/s: R_dim ≈ (len_scale / time_scale).
+            R_um_per_us = (R_vals * len_scale) / time_scale  # (μm/μs) since both scales are SI
 
-            pts = tvtk.Points(); pts.from_array(verts)
+            pts = tvtk.Points(); pts.from_array(verts_visual)
             cells = tvtk.CellArray()
             for f in faces:
                 cells.insert_next_cell(len(f), f.tolist())
@@ -358,3 +363,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
