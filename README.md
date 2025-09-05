@@ -107,7 +107,7 @@ options:
 This ensures consistency in material parameters (`Ts`, `Tl`, `ΔT`), length/time scaling, etc.
  - By default G and R VTK files are written.
 - The temperature volume (T) is only written if `--write-temp` is provided.
-- The resulting VTK files can be opened directly in ParaView for visualization 
+- The resulting VTK files can be opened directly in ParaView for visualization. 
 
 ## Notes
 - Default material: 316L stainless steel
