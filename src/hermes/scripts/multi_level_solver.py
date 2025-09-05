@@ -145,12 +145,12 @@ else:
 
 if rc.output.format == "npy":
     def save_step(step, arrays: dict):
-        base = f"step_{step:06d}"
+        base = f"step_{step:09d}"
         for k, v in arrays.items():
             cp.save(str(snap_dir / f"{base}_{k}.npy"), v)
 elif rc.output.format == "npz":
     def save_step(step, arrays: dict):
-        base = f"step_{step:06d}"
+        base = f"step_{step:09d}"
         save_arrays_npz(
             snap_dir / f"{base}.npz",
             arrays,
