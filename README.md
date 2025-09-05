@@ -94,12 +94,13 @@ python3 surface_export.py --help
 options:
   -h, --help       show this help message and exit
   --path PATH      Path to output tag dir (contains 'snapshots/'). Example: /abs/.../outputs/demo_run
-  --steps STEPS    Which steps: 'all', 'last', 'N', 'N:M', or comma list '10,20,30'. Default: last
+  --steps STEPS    Which steps: 'all', 'last', 'N', 'N:M', or comma list '10,20,30'. Def: last
   --write-temp     Also write temperature volume as VTK ImageData.
   --skip-G         Do not generate G surface VTK (even if G_flat exists).
   --skip-R         Do not generate R surface VTK (even if R_flat exists).
-  --config CONFIG  Optional path to sim.ini. If omitted, tries PATH/sim.ini; else falls back to repo
-                   configs/sim.ini.
+  --config CONFIG  Optional path to sim.ini. If omitted, tries PATH/sim.ini;
+                   else falls back to repo configs/sim.ini.
+                   
 
 ```
 **Important:**
