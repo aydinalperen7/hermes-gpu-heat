@@ -1,0 +1,118 @@
+# ---------- Material (optional: defaults to 316L if omitted) ----------
+[material]
+name = 316L                 # purely informational
+
+# Any of these keys are optional; only set what you want to override.
+# To use defaults (316L): omit this section or leave it empty.
+# Units:
+#   T*: allow K or C (e.g., 25C, 298K)
+#   Others are plain SI
+K = 13.5                    # W/(m·K)
+rho = 7950                  # kg/m^3
+Cp = 470                    # J/(kg·K)
+Lf = 2.7e5                  # J/kg
+A = 0.55                    # absorptivity (0..1)
+T0 = 25C                    # ambient (accepts 'C' or 'K')
+Ts = 1658K                  # solidus
+Tl = 1723K                  # liquidus
+hc = 10.0                   # W/(m^2·K)
+epsilon = 0.1               # emissivity (0..1)
+sigma = 5.67e-8             # W/(m^2·K^4)
+
+
+
+# ---------- High-level simulation knobs ----------
+[simulation]
+float_type = float64         # or float32
+tag = demo_run               # used to name outputs
+
+# ---------- Laser & motion ----------
+[laser]
+Q = 70
+x_span = 25um
+v = 1.0
+x00_initial = 0
+y00_initial = 0
+
+# ---------- Motion / scan direction ----------
+[movement]
+x = 0     # -1 => negative x, 0 => none in x, 1 => positive x
+y = 1     # -1 => negative y, 0 => none in y, 1 => positive y
+
+
+# ---------- Grid: Level 3 (linear/coarsest) ----------
+[grid.level3]
+lxd = 96 * 50um
+lyd = 96 * 50um
+lzd = 48 * 50um
+h   = 18.75um, 18.75um, 18.75um             # (hx, hy, hz) spacing for level 3
+# nx/ny/nz optional; if omitted they’re derived from lengths & h (ceil)
+
+# ---------- Grid: Level 1 (finest near source) ----------=
+[grid.level1]
+lxd = 12 * 50um
+lyd = 12 * 50um
+lzd = 6  * 50um
+# choose ONE of the following ways to define resolution:
+h_factor = 4.0              # h_level1 = h_level3 / h_factor
+# OR: h = 4.6875um, 4.6875um, 9um   # direct spacing corresponds to hx, hy, hz
+# OR: nx = 256; ny = 256; nz = 128  # direct cell counts (meters assumed for lengths)
+
+# ---------- Grid: Level 2 (intermediate) ----------
+[grid.level2]
+lxd = 20 * 50um
+lyd = 20 * 50um
+lzd = 10 * 50um
+h_factor = 2.0              # h_level2 = h_level3 / h_factor
+# OR: h = 9.375um,  9.375um,  9.375um like above
+# OR: nx/ny/nz like above
+
+# ---------- Time stepping ----------
+[time]
+# Choose ONE of the following (the other must be omitted):
+end_time = 10ms            # total simulated time (seconds, ms, us)
+# OR
+# scan_length = 3mm        # physical scan distance (m, mm, um, nm)
+
+# Choose ONE of the following for timestep control:
+CFL = 0.03333333333333334        # CFL with respect to level 1
+# OR
+# dt = 100us              # physical dt in seconds
+
+# ---------- Solver parameters ----------
+[solver]
+# Conjugate Gradient tolerances
+cg_tol_level1 = 1e-6
+cg_tol_level2 = 1e-5
+cg_tol_level3 = 1e-4
+
+# Conjugate Gradient max iterations
+cg_max_iter_level1 = 2000
+cg_max_iter_level2 = 1500
+cg_max_iter_level3 = 1000
+
+
+
+# ---------- Multi-layer settings ----------
+[layers]
+num_layers = 1
+layer_thickness = 50um
+
+
+
+[output]
+dir = outputs
+
+# Output format:
+#   npy → one .npy file per array (e.g., u_s.npy, x_s.npy, y_s.npy, ...)
+#   npz → one .npz archive per step (contains all arrays together)
+format = npy
+
+
+# --- snapshot policy (choose one or combine) ---
+final_only = true          # save only the last step (default true)
+save_stride = 0            # if >0, also save every N steps (e.g., 50)
+save_steps =               # optional comma list of specific steps (e.g., 100,250,999)
+compress = true            # use .npz compressed files (only relevant if format = npz)
+
+
