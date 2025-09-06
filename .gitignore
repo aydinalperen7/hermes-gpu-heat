@@ -26,3 +26,7 @@ venv/
 # CuPy cache (optional)
 ~/.cupy/kernel_cache/
 
+outputs/
+*.npy
+*.npz
+*.vtk
