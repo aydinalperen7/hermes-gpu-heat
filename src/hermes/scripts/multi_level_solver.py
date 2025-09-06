@@ -204,6 +204,18 @@ h_level2_factor = h_level3 / h_level2
 
 
 
+# ---------- Solver Parameters ----------
+cg_tol_level1      = rc.solver.cg_tol_level1
+cg_tol_level2      = rc.solver.cg_tol_level2
+cg_tol_level3      = rc.solver.cg_tol_level3
+cg_max_iter_level1 = rc.solver.cg_max_iter_level1
+cg_max_iter_level2 = rc.solver.cg_max_iter_level2
+cg_max_iter_level3 = rc.solver.cg_max_iter_level3
+assert cg_tol_level1 > 0 and cg_tol_level2 > 0 and cg_tol_level3 > 0
+assert cg_max_iter_level1 > 0 and cg_max_iter_level2 > 0 and cg_max_iter_level3 > 0
+
+
+
 
 
 
@@ -230,7 +242,7 @@ kappa = float_type(phys.kappa)
 ### PHYSICAL PARAMETERS ### --COMPUTE BASED ON USER INPUT
 
 
-### TIME STEP SIZE ### --COMPUTE BASED ON USER INPUT
+### TIME STEP SIZE AND LAST TIME STEP PER LAYER ### --COMPUTE BASED ON USER INPUT
 if rc.time.CFL is not None:
     # CFL-based timestep
     dt_lin_s = (rc.time.CFL * h_level1**2) / phys.kappa    # physical seconds
@@ -243,22 +255,33 @@ else:
     raise ValueError("You must specify either [time].CFL or [time].dt in sim.ini")
 dt_lin05 = 0.5*dt_lin
 ttt = 0 # Starting time
-### TIME STEP SIZE ### --COMPUTE BASED ON USER INPUT
+
+velocity = float_type(v / ( (phys.len_scale / phys.time_scale) / dt_lin)) 
+velocity0 = velocity
+
+if rc.time.end_time_s is not None:
+    target_step = int(round((rc.time.end_time_s / phys.time_scale) / dt_lin)) - 1
+elif rc.time.scan_length_m is not None:
+    target_step = int(round(rc.time.scan_length_m / (velocity * phys.len_scale))) - 1 
+else:
+    target_step = int(round(1e-3 / (velocity * phys.len_scale)))
+    print('Scan distance or end time is not provided, set to 1mm scan by default')
+### TIME STEP SIZE AND LAST TIME STEP PER LAYER ### --COMPUTE BASED ON USER INPUT
+
+
+
 
 
 ###  -- COMPUTE BASED ON USER INPUT
-outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, dt_lin, cp)
+outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, dt_lin, cp, target_step)
 nx_lin = outer["sp"].nx; ny_lin = outer["sp"].ny; nz_lin = outer["sp"].nz
 x_lin, y_lin, z_lin = outer["x_lin"], outer["y_lin"], outer["z_lin"]
 h_lin = outer["h_lin"]
 h_linisq = outer["h_linisq"]
 u_lin, u_new_lin, b_lin = outer["u_lin"], outer["u_new_lin"], outer["b_lin"]
-t_vals_lin = outer["t_vals_lin"]
 x_lin0 = x_lin.copy()
 y_lin0 = y_lin.copy()
 z_lin0 = z_lin.copy()
-velocity = float_type(v / ( (phys.len_scale / phys.time_scale) / dt_lin)) 
-velocity0 = velocity
 ###  -- COMPUTE BASED ON USER INPUT
 
 
@@ -676,21 +699,13 @@ level2 = LevelRefs(u_s_level2, x_s_level2, y_s_level2, z_s_level2, nx_s_level2, 
 lin    = LevelRefs(u_lin, x_lin, y_lin, z_lin, nx_lin, ny_lin, nz_lin, x_lin0, y_lin0)
 
 kernels = Kernels(grid_movement_index, precompute_for_update)
-pre = GridUpdater(level1, level2, lin, kernels, float_type=float_type, t_len=len(t_vals_lin))
+pre = GridUpdater(level1, level2, lin, kernels, float_type=float_type, t_len=target_step)
 
 initial_move_y = movement_y
 initial_move_x = movement_x
 
 print('movement_y = ', movement_y)
 print('movement_x= ', movement_x)
-
-if rc.time.end_time_s is not None:
-    target_step = int(round((rc.time.end_time_s / phys.time_scale) / dt_lin)) - 1
-elif rc.time.scan_length_m is not None:
-    target_step = int(round(rc.time.scan_length_m / (velocity * phys.len_scale))) - 1 
-else:
-    target_step = int(round(1e-3 / (velocity * phys.len_scale)))
-    print('Scan distance or end time is not provided, set to 1mm scan by default')
 
 
 
@@ -793,14 +808,89 @@ for layers in range(num_layers):
         blocks_per_grid_out_s_level2_x =  (nx_s_level2*ny_s_out_level2*nz_s_level2 + (threads_per_block_out_s_level2_x-1)) // threads_per_block_out_s_level2_x
         ### Pre-Compute for update ###
 
+        d_u_lin = cuda.to_device(u_lin)
+        d_p_o = cuda.to_device(p_o)
+        d_p_i = cuda.to_device(p_i)
+        d_p_r = cuda.to_device(p_r)
+        d_p_l = cuda.to_device(p_l)
+        d_p_b = cuda.to_device(p_b)
 
+        d_p_o_level2 = cuda.to_device(p_o_level2)
+        d_p_i_level2 = cuda.to_device(p_i_level2)
+        d_p_r_level2 = cuda.to_device(p_r_level2)
+        d_p_l_level2 = cuda.to_device(p_l_level2)
+        d_p_b_level2 = cuda.to_device(p_b_level2)
+
+        d_u_s = cuda.to_device(u_s)
+        d_u_s_level2 = cuda.to_device(u_s_level2)
+
+        d_b_lin = cuda.to_device(b_lin)
+        d_b_s = cuda.to_device(b_s)
+        d_b_s_level2 = cuda.to_device(b_s_level2)
+
+        d_uinte_level2 = cuda.to_device(uinte_level2)
+        d_uinte = cuda.to_device(uinte)
+
+        d_p_o_old = cuda.to_device(p_o_old)
+        d_p_i_old = cuda.to_device(p_i_old)
+        d_p_r_old = cuda.to_device(p_r_old)
+
+        d_p_l_old = cuda.to_device(p_l_old)
+        d_p_b_old = cuda.to_device(p_b_old)
+
+        d_p_o_old_level2 = cuda.to_device(p_o_old_level2)
+        d_p_i_old_level2 = cuda.to_device(p_i_old_level2)
+        d_p_r_old_level2 = cuda.to_device(p_r_old_level2)
+        d_p_l_old_level2 = cuda.to_device(p_l_old_level2)
+        d_p_b_old_level2 = cuda.to_device(p_b_old_level2)
+
+        d_qs_lin = cuda.to_device(qs_lin)
+        d_qs_s_level2 = cuda.to_device(qs_s_level2)
+        d_qs_s = cuda.to_device(qs_s)
+
+
+        d_x_lin = cuda.to_device(x_lin)
+        d_y_lin = cuda.to_device(y_lin)
+        d_z_lin = cuda.to_device(z_lin)
+
+        d_x_s = cuda.to_device(x_s)
+        d_y_s = cuda.to_device(y_s)
+        d_z_s = cuda.to_device(z_s)
+
+        d_x_s2 = cuda.to_device(x_s2)
+        d_y_s2 = cuda.to_device(y_s2)
+        d_z_s2 = cuda.to_device(z_s2)
+
+        d_x_s_level2 = cuda.to_device(x_s_level2)
+        d_y_s_level2 = cuda.to_device(y_s_level2)
+        d_z_s_level2 = cuda.to_device(z_s_level2)
+
+        d_x_s2_level2 = cuda.to_device(x_s2_level2)
+        d_y_s2_level2 = cuda.to_device(y_s2_level2)
+        d_z_s2_level2 = cuda.to_device(z_s2_level2)
+
+        d_uout_s = cuda.to_device(uout_s)
+        d_uout_s_level2 = cuda.to_device(uout_s_level2)
+
+        d_uin_s = cuda.to_device(uin_s)
+        d_uin_s_level2 = cuda.to_device(uin_s_level2)
+
+        d_u_s_level2_old = cuda.to_device(u_s_level2_old)
+        d_u_s_old = cuda.to_device(u_s_old)
+
+        d_uinteold = cuda.to_device(uinteold)
+        d_uinteold_level2 = cuda.to_device(uinteold_level2)
+
+        d_result_lin = cuda.to_device(result_lin)
+        d_result_s = cuda.to_device(result_s)
+        d_result_s_level2 = cuda.to_device(result_s_level2)
 
 
 
 
 
  
-    for iii, t_val in enumerate(t_vals_lin):
+    for iii in range(target_step):
     
         ttt += dt_lin*phys.time_scale*1e3
         if velocity != velocity0:
@@ -1026,7 +1116,7 @@ for layers in range(num_layers):
     
         ### Solve the 3rd Level ###
         rhs_level3_dirichlet[blocks_per_grid_lin, threads_per_block_lin](nx_lin, ny_lin, nz_lin,u_lin, qs_lin, b_lin, h_linisq, h_linisq, h_linisq, n2, n3, dt_lin05, u0, h_lin)    
-        u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, 1e-5, None, maxit=1000)
+        u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, cg_tol_level1, None, maxit=cg_max_iter_level1)
         u_lin[:] = u_new_lin.copy()
         ### Solve the 3rd Level ###
         
@@ -1039,7 +1129,7 @@ for layers in range(num_layers):
      
         ### Solve the 2nd Level ###
         rhs_level12_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2](nx_s_level2, ny_s_level2, nz_s_level2, u_s_level2_old,  qs_s_level2, b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, p_o_level2, p_i_level2, p_r_level2, p_l_level2, p_b_level2, p_o_old_level2, p_i_old_level2, p_r_old_level2, p_l_old_level2, p_b_old_level2, u_s_level2, h_z_new_level2, n4, n5, n6)
-        u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, 1e-6, None, maxit=1000)
+        u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, cg_tol_level2, None, maxit=cg_max_iter_level2)
         ### Solve the 2nd Level ###
     
     
@@ -1064,7 +1154,7 @@ for layers in range(num_layers):
         ### Solve the 1st Level ###
         for nl_lv1 in range(non_lin_it_lv1):
             rhs_level12_neumann[blocks_per_grid_s, threads_per_block_s]( nx_s, ny_s, nz_s, d_u_s_old,  d_qs_s, d_b_s, h_ix_newsq, h_iy_newsq, h_iz_newsq, iSte, n2, n3, dt_lin05, d_p_o, d_p_i, d_p_r, d_p_l, d_p_b, d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old, d_u_s, h_z_new, n4, n5, n6)
-            u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, 1e-6, None, maxit=1000)
+            u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, cg_tol_level3, None, maxit=cg_max_iter_level3)
     
             if nl_lv1 != nl_lv1-1:
                 u_s[:] = (1-w_lv1)*u_s + w_lv1*u_new_s
@@ -1085,12 +1175,9 @@ for layers in range(num_layers):
             })
             
         
+  
         
-        if iii == target_step:
-            break
-        
-
-        
+ 
         
 
         
@@ -1200,8 +1287,86 @@ for layers in range(num_layers):
         yoldmin_lin = float_type(y_lin[0].get())
         zoldmin_lin = float_type(z_lin[0].get())
         
+        
+        d_u_lin = cuda.to_device(u_lin)
+        d_p_o = cuda.to_device(p_o)
+        d_p_i = cuda.to_device(p_i)
+        d_p_r = cuda.to_device(p_r)
+        d_p_l = cuda.to_device(p_l)
+        d_p_b = cuda.to_device(p_b)
+
+        d_p_o_level2 = cuda.to_device(p_o_level2)
+        d_p_i_level2 = cuda.to_device(p_i_level2)
+        d_p_r_level2 = cuda.to_device(p_r_level2)
+        d_p_l_level2 = cuda.to_device(p_l_level2)
+        d_p_b_level2 = cuda.to_device(p_b_level2)
+
+        d_u_s = cuda.to_device(u_s)
+        d_u_s_level2 = cuda.to_device(u_s_level2)
+
+        d_b_lin = cuda.to_device(b_lin)
+        d_b_s = cuda.to_device(b_s)
+        d_b_s_level2 = cuda.to_device(b_s_level2)
+
+        d_uinte_level2 = cuda.to_device(uinte_level2)
+        d_uinte = cuda.to_device(uinte)
+
+        d_p_o_old = cuda.to_device(p_o_old)
+        d_p_i_old = cuda.to_device(p_i_old)
+        d_p_r_old = cuda.to_device(p_r_old)
+        d_p_l_old = cuda.to_device(p_l_old)
+        d_p_b_old = cuda.to_device(p_b_old)
+
+        d_p_o_old_level2 = cuda.to_device(p_o_old_level2)
+        d_p_i_old_level2 = cuda.to_device(p_i_old_level2)
+        d_p_r_old_level2 = cuda.to_device(p_r_old_level2)
+        d_p_l_old_level2 = cuda.to_device(p_l_old_level2)
+        d_p_b_old_level2 = cuda.to_device(p_b_old_level2)
+
+        d_qs_lin = cuda.to_device(qs_lin)
+        d_qs_s_level2 = cuda.to_device(qs_s_level2)
+        d_qs_s = cuda.to_device(qs_s)
+
+
+        d_x_lin = cuda.to_device(x_lin)
+        d_y_lin = cuda.to_device(y_lin)
+        d_z_lin = cuda.to_device(z_lin)
+
+
+        d_x_s = cuda.to_device(x_s)
+        d_y_s = cuda.to_device(y_s)
+        d_z_s = cuda.to_device(z_s)
+
+        d_x_s2 = cuda.to_device(x_s2)
+        d_y_s2 = cuda.to_device(y_s2)
+        d_z_s2 = cuda.to_device(z_s2)
+
+        d_x_s_level2 = cuda.to_device(x_s_level2)
+        d_y_s_level2 = cuda.to_device(y_s_level2)
+        d_z_s_level2 = cuda.to_device(z_s_level2)
+
+        d_x_s2_level2 = cuda.to_device(x_s2_level2)
+        d_y_s2_level2 = cuda.to_device(y_s2_level2)
+        d_z_s2_level2 = cuda.to_device(z_s2_level2)
+
+        d_uout_s = cuda.to_device(uout_s)
+        d_uout_s_level2 = cuda.to_device(uout_s_level2)
+
+        d_uin_s = cuda.to_device(uin_s)
+        d_uin_s_level2 = cuda.to_device(uin_s_level2)
+
+        d_u_s_level2_old = cuda.to_device(u_s_level2_old)
+        d_u_s_old = cuda.to_device(u_s_old)
+
+        d_uinteold = cuda.to_device(uinteold)
+        d_uinteold_level2 = cuda.to_device(uinteold_level2)
+
+        d_result_lin = cuda.to_device(result_lin)
+        d_result_s = cuda.to_device(result_s)
+        d_result_s_level2 = cuda.to_device(result_s_level2)
+        
         ### Let it cool for balance ###
-        for iii, t_val in enumerate(t_vals_lin):
+        for iii in range(target_step):
     
             ttt += dt_lin*phys.time_scale*1e3
             
@@ -1219,7 +1384,7 @@ for layers in range(num_layers):
         
             ### Solve the 3rd Level ###
             rhs_level3_dirichlet[blocks_per_grid_lin, threads_per_block_lin]( nx_lin, ny_lin, nz_lin, d_u_lin, d_qs_lin, d_b_lin, h_linisq, h_linisq, h_linisq, n2, n3, dt_lin05, u0, h_lin)
-            u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, 1e-6, None, maxit=1000)
+            u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, cg_tol_level1, None, maxit=cg_max_iter_level1)
             u_lin[:] = u_new_lin.copy()
             ### Solve the 3rd Level ###
             
@@ -1231,7 +1396,7 @@ for layers in range(num_layers):
          
             ### Solve the 2nd Level ###
             rhs_level12_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2]( nx_s_level2, ny_s_level2, nz_s_level2, d_u_s_level2_old,  d_qs_s_level2, d_b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, d_p_o_level2, d_p_i_level2, d_p_r_level2, d_p_l_level2, d_p_b_level2, d_p_o_old_level2, d_p_i_old_level2, d_p_r_old_level2, d_p_l_old_level2, d_p_b_old_level2, d_u_s_level2, h_z_new_level2, n4, n5, n6)
-            u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, 1e-6, None, maxit=1000)
+            u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, cg_tol_level2, None, maxit=cg_max_iter_level2)
             ### Solve the 2nd Level ###
             
             
@@ -1254,10 +1419,9 @@ for layers in range(num_layers):
             
             ### Solve the 1st Level ###
             rhs_level12_neumann[blocks_per_grid_s, threads_per_block_s](nx_s, ny_s, nz_s, d_u_s_old,  d_qs_s, d_b_s, h_ix_newsq, h_iy_newsq, h_iz_newsq, iSte, n2, n3, dt_lin05, d_p_o, d_p_i, d_p_r, d_p_l, d_p_b, d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old, d_u_s, h_z_new, n4, n5, n6)
-            u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, 1e-6, None, maxit=1000)
+            u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, cg_tol_level3, None, maxit=cg_max_iter_level3)
             u_s[:] = u_new_s.copy()          
             ### Solve the 1st Level ###
-            
             
             if iii == 100:
                 break     
