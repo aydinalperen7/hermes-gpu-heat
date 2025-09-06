@@ -106,7 +106,47 @@ options:
 This ensures consistency in material parameters (`Ts`, `Tl`, `ΔT`), length/time scaling, etc.
  - By default G and R VTK files are written.
 - The temperature volume (T) is only written if `--write-temp` is provided.
-- The resulting VTK files can be opened directly in ParaView for visualization. 
+- The resulting VTK files can be opened directly in ParaView for visualization.
+## Example Run
+
+Example case: 
+A **3 mm straight scan in the y-direction** with laser power **Q = 70 W** and beam radius **rb = 25 µm**, velocity **v = 1.0 m/s**.  
+The simulation was run on TACC Vista (Grace Hopper GPU) using:
+
+```bash
+# Run solver
+python3 src/hermes/scripts/multi_level_solver.py \
+  --config configs/sim_ex1.ini
+
+# Post-process outputs into VTK
+python3 src/hermes/post/surface_export.py \
+  --path outputs/example_Q70_r25_v1 \
+  --config configs/sim_ex1.ini \
+  --write-temp
+  ```
+  The results were then visualized in Paraview:
+- **Temperature field** (cut 20 µm below the surface)  
+- Profiles of **thermal gradient (G)** and **solidification velocity (R)** along the melt-pool surface  
+(from the deepest point of the melt pool to the trailing end)
+
+<p align="center"> <img src="Figs_example1/Temperature_example1.png" alt="Temperature field example" width="500"/> </p> <p align="center"> <img src="Figs_example1/GR_example1.png" alt="G and R profiles example" width="500"/> </p>
+
+Example console output from this run:
+```text
+[info] sim.ini: /work/09143/halperen/vista/HERMES/hermes/configs/sim_ex1.ini
+[info] Ts=1658.0 K, Tl=1723.0 K, ΔT=65.0 K, len_scale=0.023057365490123424, time_scale=147.14671993697004
+[info] Steps: [17858]
+[info] Writing under: /work/09143/halperen/vista/hermo/HERMES-independent/outputs/example_Q70_r25_v1/VTK
+
+=== step 017858 ===
+  Melt extents [μm]: x=78.0, y=360.0, z=34.5
+  Deepest y-plane index = 185
+  Wrote G surface: /work/09143/halperen/vista/HERMES/hermes/outputs/example_Q70_r25_v1/VTK/G/vtkG_step_017858.vtk
+  Wrote R surface: /work/09143/halperen/vista/HERMES/hermes/outputs/example_Q70_r25_v1/VTK/R/vtkR_step_017858.vtk
+  Wrote temperature volume: /work/09143/halperen/vista/HERMES/hermes/outputs/example_Q70_r25_v1/VTK/T/UT_step_017858.vtk
+  
+[done]
+```
 
 ## Notes
 - Default material: 316L stainless steel
