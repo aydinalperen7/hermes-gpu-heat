@@ -120,7 +120,7 @@ python3 src/hermes/scripts/multi_level_solver.py \
 
 # Post-process outputs into VTK
 python3 src/hermes/post/surface_export.py \
-  --path outputs/example_Q70_r25_v1 \
+  --path outputs/example1_Q70_r25_v1 \
   --config configs/sim_ex1.ini \
   --write-temp
   ```
