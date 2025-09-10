@@ -35,6 +35,10 @@ from hermes.runtime.state import GridState
 from hermes.runtime.config import load_config
 from hermes.post.snapshot import save_arrays_npz
 from hermes.post.gr_metrics import compute_G_and_R_gpu
+from hermes.laser_path.path_loader import build_waypoints_nd_from_ini
+from hermes.laser_path.trajectory import TrajectoryStepper
+
+
 
 
 from pathlib import Path
@@ -47,7 +51,7 @@ def len_um(x): return x *  phys.len_scale * 1e6    # [um]
 def shape_back_3d(u, nx, ny, nz): return cp.reshape(u, (nx, ny, nz), order='F')
 def temp_dim(u): return u * phys.deltaT + phys.Ts  # [K]
 def gaussian2d(x, y, sigma,x00,y00): return  phys.n1 * cp.exp(-2*((x-x00)**2 + (y-y00)**2) / ( (sigma)**2)) 
-    
+
 
 
 def mv_wrapper_lin(v):
@@ -74,6 +78,18 @@ def sparse_cg(A, b, u0, TOL, P, maxit):
       x,status = cspla.cg(A, b, x0=u0, tol=TOL, M=P, maxiter = maxit, callback=callback)
       return x,status,num_iters
           
+def secs_to_nd_steps(t_secs: list[float], phys, dt_lin: float) -> list[int]:
+    out = []
+    for ts in t_secs:
+        t_nd = ts / float(phys.time_scale)
+        k = int(round(t_nd / float(dt_lin)))
+        if k >= 0:
+            out.append(k)
+    return out
+
+
+def is_layer_selected(layer_idx1_based: int) -> bool:
+    return (not rc.output.save_layers) or (layer_idx1_based in rc.output.save_layers)
 
 
 use_double_precision = True 
@@ -100,16 +116,25 @@ else:
 # Parse CLI args
 parser = argparse.ArgumentParser(description="HERMES multi-level solver")
 parser.add_argument("--config", type=str, default=None, help="Path to sim.ini file")
+parser.add_argument("--laser_path", type=str, default=None, help="Path to laser_path.ini file")
+
 args = parser.parse_args()
+
+
 
 # Project root (repo root = 3 levels up from scripts/)
 project_root = Path(__file__).resolve().parents[3]
 
 # If user gave --config use it, otherwise default to configs/sim.ini
 if args.config is not None:
-    config_path = Path(args.config).resolve()
+    config_path = (project_root / args.config).resolve()
 else:
     config_path = project_root / "configs" / "sim.ini"
+
+if args.laser_path is not None:
+    path_info = (project_root / args.laser_path).resolve()
+else:
+    path_info = project_root / "configs" / "path_laser.ini"
 
 
 rc = load_config(config_path)
@@ -118,49 +143,6 @@ rc = load_config(config_path)
 # run_dir = Path(rc.output.dir) / rc.output.tag
 # snap_dir = run_dir / "snapshots"
 
-do_stride = rc.output.save_stride > 0
-do_explicit = bool(rc.output.save_steps)
-do_final = rc.output.final_only
-
-if do_final or do_stride or do_explicit:
-    project_root = Path(__file__).resolve().parents[3]
-    out_dir = project_root / rc.output.dir / rc.output.tag / "snapshots"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    snap_dir = out_dir
-
-# --- Precompute a fast decision function for post processing ---
-if not do_stride and not do_explicit:
-    # only final step
-    def should_save_step(step: int, last_step: int) -> bool:
-        return do_final and step == last_step
-else:
-    def should_save_step(step: int, last_step: int) -> bool:
-        if do_final and step == last_step:
-            return True
-        if do_stride and (step % rc.output.save_stride == 0):
-            return True
-        if do_explicit and (step in rc.output.save_steps):
-            return True
-        return False
-
-if rc.output.format == "npy":
-    def save_step(step, arrays: dict):
-        base = f"step_{step:09d}"
-        for k, v in arrays.items():
-            cp.save(str(snap_dir / f"{base}_{k}.npy"), v)
-elif rc.output.format == "npz":
-    def save_step(step, arrays: dict):
-        base = f"step_{step:09d}"
-        save_arrays_npz(
-            snap_dir / f"{base}.npz",
-            arrays,
-            compress=rc.output.compress,
-        )
-else:
-    raise ValueError(f"Unknown output format: {rc.output.format}")
-# --- Precompute a fast decision function for post processing ---
-
-        
 
 
 
@@ -172,21 +154,45 @@ x_span_m = rc.laser.x_span_m
 v = rc.laser.v
 x00_initial_m = rc.laser.x00_initial
 y00_initial_m = rc.laser.y00_initial
-movement_x = rc.movement.x   # -1, 0, or 1
-movement_y = rc.movement.y   # -1, 0, or 1
+# ---------- LASER INPUTS ----------
 
-# Optional: material parameters (defaults to 316L if no overrides)
-mat_override = rc.material.to_override_dict()
 
-# Mult-layer
+
+
+# ---------- PHYSICAL PARAMETERS ----------
+mat_override = rc.material.to_override_dict() # Optional: material parameters (defaults to 316L if no overrides)
+t_span_s = 2 * x_span_m / v
+phys = phys_parameter( Q, x_span_m, t_span_s, mat_ch=mat_override )
+x_span = float_type(x_span_m / phys.len_scale)
+t_span = float_type(t_span_s / phys.time_scale)
+Ste    = float_type(phys.Ste)
+iSte   = float_type(1.0 / Ste)
+n1     = float_type(phys.n1)
+n2     = float_type(phys.n2)
+n3     = float_type(phys.n3)
+n4     = float_type(phys.n4)
+n5     = float_type(phys.n5)
+n6     = float_type(phys.n6)
+u0     = float_type(phys.u0)
+kappa = float_type(phys.kappa)
+# ---------- PHYSICAL PARAMETERS ----------
+
+
+
+# ---------- Multi-Layer ----------
 num_layers = rc.layers.num_layers
 layer_thickness = rc.layers.layer_thickness
+# ---------- Multi-Layer ----------
+
+
 
 # ---------- LEVEL 3 (base/outer) ----------
 lxd_level3 = rc.level3.lxd
 lyd_level3 = rc.level3.lyd
 lzd_level3 = rc.level3.lzd
 h_level3 = rc.level3.h_tuple[0]    # spacing (meters, isotropic assumed)
+# ---------- LEVEL 3 (base/outer) ----------
+
 
 # ---------- LEVEL 1 (inner/fine) ----------
 lxd_level1 = rc.level1.lxd
@@ -194,6 +200,8 @@ lyd_level1 = rc.level1.lyd
 lzd_level1 = rc.level1.lzd
 h_level1 = rc.level1.h_tuple[0]
 h_level1_factor = h_level3 / h_level1   # matches your old convention
+# ---------- LEVEL 1 (inner/fine) ----------
+
 
 # ---------- LEVEL 2 (intermediate) ----------
 lxd_level2_m = rc.level2.lxd
@@ -201,6 +209,7 @@ lyd_level2_m = rc.level2.lyd
 lzd_level2_m = rc.level2.lzd
 h_level2 = rc.level2.h_tuple[0]
 h_level2_factor = h_level3 / h_level2
+# ---------- LEVEL 2 (intermediate) ----------
 
 
 
@@ -213,6 +222,7 @@ cg_max_iter_level2 = rc.solver.cg_max_iter_level2
 cg_max_iter_level3 = rc.solver.cg_max_iter_level3
 assert cg_tol_level1 > 0 and cg_tol_level2 > 0 and cg_tol_level3 > 0
 assert cg_max_iter_level1 > 0 and cg_max_iter_level2 > 0 and cg_max_iter_level3 > 0
+# ---------- Solver Parameters ----------
 
 
 
@@ -222,27 +232,7 @@ assert cg_max_iter_level1 > 0 and cg_max_iter_level2 > 0 and cg_max_iter_level3 
 
 
 
-### PHYSICAL PARAMETERS ### --COMPUTE BASED ON USER INPUT
-t_span_s = 2 * x_span_m / v
-phys = phys_parameter( Q, x_span_m, t_span_s, mat_ch=mat_override )
-x_span = float_type(x_span_m / phys.len_scale)
-t_span = float_type(t_span_s / phys.time_scale)
-x00_initial = float_type(x00_initial_m / phys.time_scale)
-y00_initial = float_type(y00_initial_m / phys.time_scale)
-Ste    = float_type(phys.Ste)
-iSte   = float_type(1.0 / Ste)
-n1     = float_type(phys.n1)
-n2     = float_type(phys.n2)
-n3     = float_type(phys.n3)
-n4     = float_type(phys.n4)
-n5     = float_type(phys.n5)
-n6     = float_type(phys.n6)
-u0     = float_type(phys.u0)
-kappa = float_type(phys.kappa)
-### PHYSICAL PARAMETERS ### --COMPUTE BASED ON USER INPUT
-
-
-### TIME STEP SIZE AND LAST TIME STEP PER LAYER ### --COMPUTE BASED ON USER INPUT
+# ---------- Time Step Size ----------
 if rc.time.CFL is not None:
     # CFL-based timestep
     dt_lin_s = (rc.time.CFL * h_level1**2) / phys.kappa    # physical seconds
@@ -255,25 +245,123 @@ else:
     raise ValueError("You must specify either [time].CFL or [time].dt in sim.ini")
 dt_lin05 = 0.5*dt_lin
 ttt = 0 # Starting time
+# ---------- Time Step Size ----------
 
+
+
+
+
+
+# ---------- Create the Path ----------
+#NonDimensional (ND)
+x00_initial = float_type(x00_initial_m / phys.time_scale)
+y00_initial = float_type(y00_initial_m / phys.time_scale)
 velocity = float_type(v / ( (phys.len_scale / phys.time_scale) / dt_lin)) 
 velocity0 = velocity
 
-if rc.time.end_time_s is not None:
+#Path
+waypoints_nd = build_waypoints_nd_from_ini(path_info, len_scale=phys.len_scale)
+waypoints_nd = cp.asarray(waypoints_nd)
+
+if x00_initial != 0.0 or y00_initial != 0.0:
+    waypoints_nd = waypoints_nd + cp.array([x00_initial, y00_initial], dtype=float_type)
+stepper = TrajectoryStepper(waypoints_nd)
+y00 = y00_initial
+x00 = x00_initial
+movement_x = 0
+movement_y = 0
+# ---------- Create the Path ----------
+
+
+
+
+
+# ---------- Loop ending criteria for each layer ----------
+if rc.time.end_time_s is not None: # If user provided end time
     target_step = int(round((rc.time.end_time_s / phys.time_scale) / dt_lin)) - 1
-elif rc.time.scan_length_m is not None:
-    target_step = int(round(rc.time.scan_length_m / (velocity * phys.len_scale))) - 1 
+    def step_iterator():
+        for iii in range(target_step):
+            yield iii  
+    
+else: # else end it after the path is traced completely.
+    target_step = int(2e6) #place holder, ignore
+    def step_iterator():
+        iii = 0
+        while not stepper.done:
+            yield iii
+            iii += 1
+cooling_step = 100 # Before moving to next layer
+# ---------- Loop ending criteria for each layer ----------
+
+
+
+# ---------- FOR POST PROCESSING - Steps to save ----------
+global_save_steps = set(rc.output.save_steps)
+global_save_steps.update(secs_to_nd_steps(rc.output.save_global_times, phys, dt_lin))
+layer_steps_relative = secs_to_nd_steps(rc.output.save_times, phys, dt_lin)  # k within layer
+do_stride = rc.output.save_stride > 0
+do_explicit = bool(rc.output.save_steps)
+do_final = rc.output.final_only
+
+
+
+if do_final or do_stride or do_explicit or bool(global_save_steps) or bool(layer_steps_relative):
+    project_root = Path(__file__).resolve().parents[3]
+    out_dir = project_root / rc.output.dir / rc.output.tag / "snapshots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    snap_dir = out_dir
+
+# --- Precompute a fast decision function for post processing ---
+
+def should_save_step(step: int, layer_idx: int, rel_step: int) -> bool:
+    if not is_layer_selected(layer_idx):
+        return False
+    if do_stride and (step % rc.output.save_stride == 0):
+        return True
+    if do_explicit and (step in rc.output.save_steps):
+        return True
+    if step in global_save_steps:
+        return True
+    if rel_step in layer_steps_relative:
+        return True
+    
+    return False
+
+if rc.output.format == "npy":
+    def save_step(layer_idx,step, arrays: dict):
+        base = f"layer_{layer_idx + 1}_step_{step:09d}"
+        for k, v in arrays.items():
+            cp.save(str(snap_dir / f"{base}_{k}.npy"), v)
+elif rc.output.format == "npz":
+    def save_step(layer_idx, step, arrays: dict):
+        base = f"layer_{layer_idx + 1}_step_{step:09d}"
+        save_arrays_npz(
+            snap_dir / f"{base}.npz",
+            arrays,
+            compress=rc.output.compress,
+        )
 else:
-    target_step = int(round(1e-3 / (velocity * phys.len_scale)))
-    print('Scan distance or end time is not provided, set to 1mm scan by default')
-### TIME STEP SIZE AND LAST TIME STEP PER LAYER ### --COMPUTE BASED ON USER INPUT
+    raise ValueError(f"Unknown output format: {rc.output.format}")
+# --- Precompute a fast decision function for post processing ---
+
+
+
+# ---------- FOR POST PROCESSING - Steps to save ----------
 
 
 
 
 
-###  -- COMPUTE BASED ON USER INPUT
-outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, dt_lin, cp, target_step)
+
+
+
+
+
+
+
+
+# ---------- Initialize Level 3 (outer) ----------
+outer = init_level3_outer(phys, float_type, lxd_level3, lyd_level3, lzd_level3, h_level3, dt_lin, cp)
 nx_lin = outer["sp"].nx; ny_lin = outer["sp"].ny; nz_lin = outer["sp"].nz
 x_lin, y_lin, z_lin = outer["x_lin"], outer["y_lin"], outer["z_lin"]
 h_lin = outer["h_lin"]
@@ -282,32 +370,26 @@ u_lin, u_new_lin, b_lin = outer["u_lin"], outer["u_new_lin"], outer["b_lin"]
 x_lin0 = x_lin.copy()
 y_lin0 = y_lin.copy()
 z_lin0 = z_lin.copy()
-###  -- COMPUTE BASED ON USER INPUT
 
-
-
-###  -- COMPUTE BASED ON USER INPUT
     ### Initialize Variables ###
 u_lin =u0 * cp.ones(nx_lin*ny_lin*nz_lin,dtype=float_type) 
 u_new_lin = u0 * cp.ones(nx_lin*ny_lin*nz_lin,dtype=float_type) 
 b_lin = cp.ones(nx_lin*ny_lin*nz_lin, dtype=float_type)
 qs_lin = cp.zeros([nx_lin, ny_lin],dtype=float_type) 
-y00 = y00_initial
-x00 = x00_initial
 
-z00_end = z_lin[-1]
-t00 = float_type(outer["sp"].t_end/phys.time_scale * 0.5)
+
+# t00 = float_type(outer["sp"].t_end/phys.time_scale * 0.5)
 Y_lin, X_lin = cp.meshgrid(y_lin, x_lin) 
 Zs2_xy_lin =  gaussian2d(X_lin, Y_lin, x_span, x00_initial, y00_initial)
 Y_lin0, X_lin0 = Y_lin.copy(), X_lin.copy()
-    ### Initialize Variables ###
-###  -- COMPUTE BASED ON USER INPUT
+# ---------- Initialize Level 3 (outer) ----------
 
 
 
 to_code = lambda Lm: float_type(Lm / phys.len_scale)
 
-###  -- COMPUTE BASED ON USER INPUT; Initialize Level 1
+
+# ---------- Initialize Level 1 (inner) ----------
 inner1 = init_inner_level(
     outer, x_span,                       # x_span already in code units
     size=(to_code(lxd_level1), to_code(lyd_level1), to_code(lzd_level1)),
@@ -333,10 +415,6 @@ slice_bc_out0_1d   = inner1["slice_bc_out0_1d"]
 qs_s = cp.zeros([nx_s, ny_s],dtype=float_type) 
 
 
-
-
-
-
 Y_s, X_s = inner1["Y_s"], inner1["X_s"]
 inner1["Zs2_xy_s"] = gaussian2d(X_s, Y_s, x_span, float_type(x00_initial), float_type(y00_initial))
 
@@ -353,12 +431,12 @@ X_s0, Y_s0 = X_s.copy(), Y_s.copy()
 uinteold = cp.zeros([x_s2.shape[0] * y_s2.shape[0] * z_s2.shape[0]], dtype=float_type)
 uinte = cp.zeros([x_s2.shape[0] * y_s2.shape[0] * z_s2.shape[0]], dtype=float_type)
 nx_s2, ny_s2, nz_s2  = nx_s +2, ny_s+2, nz_s +1
-###  -- COMPUTE BASED ON USER INPUT; Initialize Level 1
+# ---------- Initialize Level 1 (inner) ----------
 
 
 
 
-###  -- COMPUTE BASED ON USER INPUT; Initialize Level 2
+# ---------- Initialize Level 2 (middle) ----------
 inner2 = init_inner_level(
     outer, x_span,
     size=(to_code(lxd_level2_m), to_code(lyd_level2_m), to_code(lzd_level2_m)),
@@ -418,7 +496,7 @@ X_s0_level2, Y_s0_level2 = X_s_level2.copy(), Y_s_level2.copy()
 uinteold_level2 = cp.zeros([x_s2_level2.shape[0] * y_s2_level2.shape[0] * z_s2_level2.shape[0]], dtype=float_type)
 uinte_level2 = cp.zeros([x_s2_level2.shape[0] * y_s2_level2.shape[0] * z_s2_level2.shape[0]], dtype=float_type)
 nx_s2_level2, ny_s2_level2, nz_s2_level2  = nx_s_level2 +2, ny_s_level2+2, nz_s_level2 +1
-###  -- COMPUTE BASED ON USER INPUT; Initialize Level 2
+# ---------- Initialize Level 2 (middle) ----------
 
 
 
@@ -427,7 +505,7 @@ nx_s2_level2, ny_s2_level2, nz_s2_level2  = nx_s_level2 +2, ny_s_level2+2, nz_s_
 #############################################################
 
 
-### FOR THE GRID MOVEMENT ###
+# ---------- For the grid movement ----------
 
     ## LEVEL 3: FIND THE CELLS FALL INSIDE AND OUTSIDE AFTER EVERY MOVEMENT ##
 (
@@ -457,18 +535,14 @@ nx_s2_level2, ny_s2_level2, nz_s2_level2  = nx_s_level2 +2, ny_s_level2+2, nz_s_
 ) = grid_movement_index(x_s0, y_s0, velocity, nx_s, ny_s, nz_s)
 
     ## LEVEL 1: FIND THE CELLS FALL INSIDE AND OUTSIDE AFTER EVERY MOVEMENT ##
+# ---------- For the grid movement ----------
 
 
-
-
-### FOR THE GRID MOVEMENT ###
-
-
-### Pre-Compute for update after shifting (stays the same throughout the simulation if velocity always constant) ###
+# ----------  Pre-Compute for update after shifting (stays the same throughout the simulation if velocity always constant) ----------
 xminn = float_type(x_lin[0].get()); yminn = float_type(y_lin[0].get()); zminn = float_type(z_lin[0].get())
 xmin_level2 = float_type(x_s_level2[0].get()); ymin_level2 = float_type(y_s_level2[0].get()); zmin_level2 = float_type(z_s_level2[0].get())
 
-# --- Level 1 (inner1)
+    #Level 1 (inner1)
 pre_s = precompute_for_update(
     u_s, nx_s, ny_s, nz_s,
     y_s, index_y,
@@ -496,7 +570,7 @@ threads_per_block_out_s_y = pre_s["tpbout"]
 threads_per_block_in_s_x  = pre_s["tpbin_x"]
 threads_per_block_out_s_x = pre_s["tpbout_x"]
 
-# --- Level 2 (inner2)
+    # Level 2 (middle)
 pre_s_level2 = precompute_for_update(
     u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2,
     y_s_level2, index_y_level2,
@@ -524,7 +598,7 @@ threads_per_block_out_s_level2_y = pre_s_level2["tpbout"]
 threads_per_block_in_s_level2_x  = pre_s_level2["tpbin_x"]
 threads_per_block_out_s_level2_x = pre_s_level2["tpbout_x"]
 
-# --- Level 3 (outer/linear)
+    # Level 3 (outer/linear)
 pre_lin = precompute_for_update(
     u_lin, nx_lin, ny_lin, nz_lin,
     y_lin, index_y_lin,
@@ -551,10 +625,10 @@ threads_per_block_in_lin_y  = pre_lin["tpbin"]
 threads_per_block_out_lin_y = pre_lin["tpbout"]
 threads_per_block_in_lin_x  = pre_lin["tpbin_x"]
 threads_per_block_out_lin_x = pre_lin["tpbout_x"]
-### Pre-Compute for update after shifting (stays the same throughout the simulation if velocity always constant) ###
+# ----------  Pre-Compute for update after shifting (stays the same throughout the simulation if velocity always constant) ----------
 
 
-#### GPU PARAMETERS ###
+# ----------  GPU Parameters ----------
 # Level 3 (outer / linear)
 blocks_per_grid_lin, threads_per_block_lin = launch_3d(nx_lin, ny_lin, nz_lin)
 
@@ -583,10 +657,10 @@ threads_per_block_GR = 256
 blocks_per_grid_s_GR  = (Nint + threads_per_block_GR - 1)//threads_per_block_GR
 G_gpu = cp.empty((Nint,), dtype=u_s.dtype)
 R_gpu = cp.empty_like(G_gpu)
-### GPU PARAMETERS ###  
+# ----------  GPU Parameters ----------
 
 
-### MATVECS FOR LEVEL 3,1 AND 2 ###
+# ----------  Matvecs for Level 3, 1 and 2 ----------
 result_lin = cp.zeros_like(u_lin, dtype=float_type)
 result_s = cp.zeros_like(u_s, dtype=float_type)
 result_s_level2 = cp.zeros_like(u_s_level2, dtype=float_type)
@@ -598,22 +672,20 @@ d_result_s_level2 = cuda.to_device(result_s_level2)
 Alinear_lin = cspla.LinearOperator((nx_lin*ny_lin*nz_lin , nx_lin*ny_lin*nz_lin), matvec=mv_wrapper_lin)
 Alinear_s = cspla.LinearOperator((nx_s*ny_s*nz_s, nx_s*ny_s*nz_s), matvec=mv_wrapper_s)
 Alinear_s_level2  = cspla.LinearOperator((nx_s_level2 *ny_s_level2 *nz_s_level2 , nx_s_level2 *ny_s_level2 *nz_s_level2 ), matvec=mv_wrapper_s_level2 )
-### MATVECS FOR LEVEL 3, 1 AND 2 ###
+# ----------  Matvecs for Level 3, 1 and 2 ----------
 
 
 
-### Variables for fixed-point it ###
+# ---------- Variables for fixed-point it ----------
 non_lin_it_lv1 = 2
 w_lv1 = float_type(2/3) 
 u_s_level2_old = u_s_level2.copy()
 u_s_old = u_s.copy()
-### Variables for fixed-point it ###
+# ---------- Variables for fixed-point it ----------
 
 
 
-### For multi-layer ###
-
-### For multi-layer ### -- COMPUTED BASED ON USER INPUT
+# ---------- For Multi-Layer ----------
 lt_sc = float_type(float_type(layer_thickness)/phys.len_scale) #layer_thickness scaled
 lay_ind_lin = int(lt_sc/h_lin)
 lay_ind_s = int((h_lin*lay_ind_lin)/h_z_new) 
@@ -626,14 +698,13 @@ u_lin3d = shape_back_3d(u_lin.copy(), nx_lin, ny_lin, nz_lin)
 u_s3d_new = u_s3d.copy()
 u_s_level23d_new = u_s_level23d.copy()
 u_lin3d_new = u_lin3d.copy()
-### For multi-layer ### -- COMPUTED BASED ON USER INPUT
-### For multi-layer ###
+# ---------- For Multi-Layer ----------
 
 
 
 
 
-### CREATE CUDA ARRAYS ###
+# ---------- CREATE CUDA ARRAYS ----------
 # --- level 3 (linear) ---
 (d_u_lin,) = (cuda.to_device(u_lin),)
 d_qs_lin, = (cuda.to_device(qs_lin),)
@@ -681,7 +752,7 @@ d_p_o_old_level2, d_p_i_old_level2, d_p_r_old_level2, d_p_l_old_level2, d_p_b_ol
 d_uinte_level2, d_uinteold_level2 = map(cuda.to_device, (uinte_level2, uinteold_level2))
 # level 2 in/out movement buffers
 d_uin_s_level2, d_uout_s_level2 = map(cuda.to_device, (uin_s_level2, uout_s_level2))
-### CREATE CUDA ARRAYS ###
+# ---------- CREATE CUDA ARRAYS ----------
 
 
 iii2 = 0
@@ -711,8 +782,9 @@ print('movement_x= ', movement_x)
 
 
 for layers in range(num_layers):
-
-    
+    stepper = TrajectoryStepper(waypoints_nd)
+    stepper.done = False
+    iii = 0
     
     cntrr = 0
     movement_x = initial_move_x
@@ -723,7 +795,7 @@ for layers in range(num_layers):
     qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
     qs_s[:] = gaussian2d(X_s, Y_s, x_span, x00, y00)
     qs_s_level2[:] = gaussian2d(X_s_level2, Y_s_level2, x_span, x00, y00)
-    
+    layer_start_iii2 = iii2
 
 
     if layers > 0 :
@@ -888,9 +960,7 @@ for layers in range(num_layers):
 
 
 
-
- 
-    for iii in range(target_step):
+    for iii in step_iterator():
     
         ttt += dt_lin*phys.time_scale*1e3
         if velocity != velocity0:
@@ -972,10 +1042,18 @@ for layers in range(num_layers):
     
             d_uinteold = cuda.to_device(uinteold)
             d_uinteold_level2 = cuda.to_device(uinteold_level2)
-    
+        
+        # print('at iii = ', iii)
+        # print('x00 = ', x00)
+        # print('y00 = ', y00)
+        # print('movement_x = ', movement_x)
+        # print('movement_y = ', movement_y)
+        if iii % 1000 == 0:
+            print('iii = ', iii)
+            print('y00 = ', y00*phys.len_scale)
         if movement_y==1 and iii and velocity : # means y-movement in + dir
         ### Move the Laser Source ###
-            y00 += velocity
+            # y00 += velocity
         ### Move the Laser Source ###
         
         ### Move Grid and update variables  ###
@@ -1007,12 +1085,12 @@ for layers in range(num_layers):
         ### Move Grid and update variables  ###
         elif  movement_y == -1 and iii and velocity:  # means y-movement in - dir
             ### Move the Laser Source ###
-                y00 -= velocity
+                # y00 -= velocity
             ### Move the Laser Source ###
             
             ### Move Grid and update variables  ###
     
-                state.move_y(velocity, iii)
+                state.move_y(-velocity, iii)
                                                 
                 update_after_movementy2_negative(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_iny_negative, slice_1d_out=slice_1d_outy_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)                                                
                 update_after_movementy2_negative(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y_negative, slice_1d_out=slice_1d_out_level2y_negative, index_y=0, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)                                                      
@@ -1040,7 +1118,7 @@ for layers in range(num_layers):
         ### Move Grid and update variables###
         elif movement_x == 1 and iii and velocity: # means x-movement in + dir
         ### Move the Laser Source ###
-            x00 += velocity
+            # x00 += velocity
         ### Move the Laser Source ###
         
         ### Move Grid and update variables  ###
@@ -1072,11 +1150,11 @@ for layers in range(num_layers):
         ### Move Grid and update variables  ###
         elif  movement_x == -1 and iii and velocity: # means x-movement in - dir
             ### Move the Laser Source ###
-                x00 -= velocity
+                # x00 -= velocity
             ### Move the Laser Source ###
             
             ### Move Grid and update variables  ###
-                state.move_x(velocity, iii)
+                state.move_x(-velocity, iii)
                 
                 update_after_movementx2_negative(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_inx_negative, slice_1d_out=slice_1d_outx_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
                 update_after_movementx2_negative(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x_negative, slice_1d_out=slice_1d_out_level2x_negative, index_x=0, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
@@ -1160,11 +1238,10 @@ for layers in range(num_layers):
                 u_s[:] = (1-w_lv1)*u_s + w_lv1*u_new_s
             u_s[:] = u_new_s.copy()
     
-        iii2 += 1
         
-        if should_save_step(iii, target_step):
+        if should_save_step( iii2, layers+1, iii):
             compute_G_and_R_gpu[blocks_per_grid_s_GR, threads_per_block_GR](u_s_old, u_s, nx_s, ny_s, nz_s,  dt_lin, h_x_new, h_y_new, h_z_new, 1e-12, G_gpu, R_gpu)
-            save_step(iii, {
+            save_step(layers, iii2, {
                 "u_s": u_s,
                 "u_s_old": u_s_old,
                 "x_s": x_s,
@@ -1173,8 +1250,10 @@ for layers in range(num_layers):
                 "G_flat": G_gpu,     
                 "R_flat": R_gpu,
             })
-            
-        
+        iii2 += 1
+        x00, y00, movement_x, movement_y, Flag = stepper.advance(velocity)
+
+        # iii += 1
   
         
  
@@ -1200,8 +1279,20 @@ for layers in range(num_layers):
             u_s_store = u_s.copy()
             u_s_level2_store = u_s_level2.copy()
             u_lin_store = u_lin.copy()
-            
-            
+    print('iii2 = ', iii2)        
+    if do_final and is_layer_selected(layers+1):
+        compute_G_and_R_gpu[blocks_per_grid_s_GR, threads_per_block_GR](u_s_old, u_s, nx_s, ny_s, nz_s,  dt_lin, h_x_new, h_y_new, h_z_new, 1e-12, G_gpu, R_gpu)
+        save_step(layers, iii2, {
+            "u_s": u_s,
+            "u_s_old": u_s_old,
+            "x_s": x_s,
+            "y_s": y_s,
+            "z_s": z_s,
+            "G_flat": G_gpu,     
+            "R_flat": R_gpu,
+        })
+    
+    x00, y00, movement_x, movement_y, Flag = stepper.advance(velocity)
     if layers < num_layers-1:
         
         velocity = velocity0
@@ -1366,7 +1457,7 @@ for layers in range(num_layers):
         d_result_s_level2 = cuda.to_device(result_s_level2)
         
         ### Let it cool for balance ###
-        for iii in range(target_step):
+        for iii in range(cooling_step):
     
             ttt += dt_lin*phys.time_scale*1e3
             
