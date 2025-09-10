@@ -210,4 +210,4 @@ For visualization, multiple picture paths (U, T, Longhorn) were concatenated and
 
 
 ## Author
-Hikmet Alperen Aydin whose advised by Prof. George Biros
+Hikmet Alperen Aydin whose advised by Prof. George Biros.
