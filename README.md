@@ -79,7 +79,7 @@ There are mainly 6 path modes. Examples for each can be found in `configs/paths_
 6) **picture** – trace a shape from a binary image (e.g. a logo or silhouette).
 
 Example preview showing all six modes (with the starting location marked as 0):
-
+<p align="center"> <img src="preview_path/preview_paths_all_modes.png" alt="Preview of all six laser path modes" width="800"/> </p>
 
 In **picture mode**, the image is converted to grayscale, thresholded, and contours are extracted (using `scikit-image`). A zigzag infill path is then created inside the shape, scaled to user-specified horizontal and/or vertical dimensions.
 
@@ -194,11 +194,9 @@ For visualization, multiple picture paths (U, T, Longhorn) were concatenated and
   <img src="UT_Longhorn/UT_Longhorn_10Layers_Sim.png" alt="Multi-layer UT-Longhorn simulation (10 layers)" width="700"/>
 </p>
 
-<p align="center">
-  <video controls width="700">
-    <source src="UT_Longhorn/UT_Longhorn_OneLayer_WithZoomInner.mp4" type="video/mp4">
-  </video>
-</p>
+[▶ Watch video: first-layer build with zoom on the inner level](UT_Longhorn/UT_Longhorn_OneLayer_WithZoomInner.mp4)
+
+
 
 
 > **Note:** This concatenation/marking steps is not part of the public solver but can be easily replicated by users if desired.
