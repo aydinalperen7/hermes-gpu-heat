@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+from typing import List, Tuple, Optional
 import numpy as np
 
 # VTK / TVTK
@@ -37,6 +38,143 @@ from hermes.physics.material import phys_parameter
 # Utils
 # --------------------------
 
+def parse_index_spec(spec: str, available: List[int]) -> List[int]:
+    """Parse 'all' | 'N' | 'A:B' | 'a,b,c' to a sorted unique list filtered by `available`."""
+    s = spec.strip().lower()
+    if s == "all":
+        return sorted(available)
+    if re.match(r"^\d+:\d+$", s):
+        a, b = map(int, s.split(":"))
+        sel = [v for v in available if a <= v <= b]
+        return sorted(sel)
+    if re.match(r"^\d+(,\d+)*$", s):
+        wanted = set(map(int, s.split(",")))
+        sel = [v for v in available if v in wanted]
+        return sorted(sel)
+    if s.isdigit():
+        val = int(s)
+        return [val] if val in available else []
+    raise ValueError(f"Unrecognized index spec: {spec}")
+
+def detect_layered_scheme(snapshot_dir: Path) -> bool:
+    """Return True if files look like 'layer_<L>_step_<STEP>_*.npy' or '.npz'."""
+    # any layered npz?
+    if any(snapshot_dir.glob("layer_*_step_*.npz")):
+        return True
+    # any layered npy (we look for u_s as representative)
+    if any(snapshot_dir.glob("layer_*_step_*_u_s.npy")):
+        return True
+    return False
+
+def list_indexed(snapshot_dir: Path) -> Tuple[bool, List[Tuple[Optional[int], int]]]:
+    """
+    Return (layered, items) where items is a list of (layer, step) tuples.
+    If layered == False, layer is None and step is the old scheme's step.
+    """
+    items: set[Tuple[Optional[int], int]] = set()
+    layered = detect_layered_scheme(snapshot_dir)
+
+    if layered:
+        # Accept both .npz and .npy sets
+        # npz: layer_<L>_step_<STEP>.npz
+        for p in snapshot_dir.glob("layer_*_step_*.npz"):
+            m = re.match(r"layer_(\d+)_step_(\d+)\.npz$", p.name)
+            if m:
+                L = int(m.group(1)); S = int(m.group(2))
+                items.add((L, S))
+        # npy: layer_<L>_step_<STEP>_u_s.npy (presence of u_s means the set exists)
+        for p in snapshot_dir.glob("layer_*_step_*_u_s.npy"):
+            m = re.match(r"layer_(\d+)_step_(\d+)_u_s\.npy$", p.name)
+            if m:
+                L = int(m.group(1)); S = int(m.group(2))
+                items.add((L, S))
+    else:
+        # Legacy scheme: step_<STEP>.npz, or step_<STEP>_u_s.npy
+        for p in snapshot_dir.glob("step_*.npz"):
+            m = re.match(r"step_(\d+)\.npz$", p.name)
+            if m:
+                S = int(m.group(1))
+                items.add((None, S))
+        for p in snapshot_dir.glob("step_*_u_s.npy"):
+            m = re.match(r"step_(\d+)_u_s\.npy$", p.name)
+            if m:
+                S = int(m.group(1))
+                items.add((None, S))
+
+    return layered, sorted(items, key=lambda t: (t[0] or 0, t[1]))
+
+def load_indexed(snapshot_dir: Path, layer: Optional[int], step: int):
+    """
+    Load one snapshot. Works with both naming schemes, layer_x_step_y or step_y.
+
+    Returns: dict with keys 'u_s','u_s_old','x_s','y_s','z_s' and optional 'G_flat','R_flat'.
+    """
+    data = {}
+    if layer is not None:
+        base_npz = snapshot_dir / f"layer_{layer}_step_{step:09d}.npz"
+        if base_npz.exists():
+            with np.load(base_npz) as Z:
+                for k in ("u_s","u_s_old","x_s","y_s","z_s"):
+                    data[k] = Z[k]
+                if "G_flat" in Z: data["G_flat"] = Z["G_flat"]
+                if "R_flat" in Z: data["R_flat"] = Z["R_flat"]
+            return data
+
+        # fall back to individual .npy
+        req = {
+            "u_s":     snapshot_dir / f"layer_{layer}_step_{step:09d}_u_s.npy",
+            "u_s_old": snapshot_dir / f"layer_{layer}_step_{step:09d}_u_s_old.npy",
+            "x_s":     snapshot_dir / f"layer_{layer}_step_{step:09d}_x_s.npy",
+            "y_s":     snapshot_dir / f"layer_{layer}_step_{step:09d}_y_s.npy",
+            "z_s":     snapshot_dir / f"layer_{layer}_step_{step:09d}_z_s.npy",
+        }
+        for k, p in req.items():
+            if not p.exists():
+                # Also try 6-digit for robustness
+                alt = snapshot_dir / f"layer_{layer}_step_{step:06d}_{k}.npy"
+                if not alt.exists():
+                    raise FileNotFoundError(f"Missing required file: {p} (or {alt})")
+                data[k] = np.load(alt)
+            else:
+                data[k] = np.load(p)
+
+        for optk in ("G_flat","R_flat"):
+            p9  = snapshot_dir / f"layer_{layer}_step_{step:09d}_{optk}.npy"
+            p6  = snapshot_dir / f"layer_{layer}_step_{step:06d}_{optk}.npy"
+            if p9.exists():
+                data[optk] = np.load(p9)
+            elif p6.exists():
+                data[optk] = np.load(p6)
+        return data
+
+    # Legacy scheme (no layer)
+    base_npz = snapshot_dir / f"step_{step:06d}.npz"
+    if base_npz.exists():
+        with np.load(base_npz) as Z:
+            for k in ("u_s","u_s_old","x_s","y_s","z_s"):
+                data[k] = Z[k]
+            if "G_flat" in Z: data["G_flat"] = Z["G_flat"]
+            if "R_flat" in Z: data["R_flat"] = Z["R_flat"]
+        return data
+
+    req = {
+        "u_s":     snapshot_dir / f"step_{step:06d}_u_s.npy",
+        "u_s_old": snapshot_dir / f"step_{step:06d}_u_s_old.npy",
+        "x_s":     snapshot_dir / f"step_{step:06d}_x_s.npy",
+        "y_s":     snapshot_dir / f"step_{step:06d}_y_s.npy",
+        "z_s":     snapshot_dir / f"step_{step:06d}_z_s.npy",
+    }
+    for k, p in req.items():
+        if not p.exists():
+            raise FileNotFoundError(f"Missing required file for step {step}: {p}")
+        data[k] = np.load(p)
+
+    for optk in ("G_flat","R_flat"):
+        p = snapshot_dir / f"step_{step:06d}_{optk}.npy"
+        if p.exists():
+            data[optk] = np.load(p)
+    return data
+
 def ensure_dir(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -45,56 +183,7 @@ def shape_back_3d(u_flat: np.ndarray, nx: int, ny: int, nz: int) -> np.ndarray:
     """Flattened Fortran-ordered -> (nx, ny, nz) array."""
     return np.reshape(u_flat, (nx, ny, nz), order="F")
 
-def list_steps(snapshot_dir: Path):
-    """Return sorted list of step integers found in snapshot_dir for .npz or .npy sets."""
-    steps = set()
-    for p in snapshot_dir.glob("step_*.npz"):
-        m = re.match(r"step_(\d{6})\.npz$", p.name)
-        if m: steps.add(int(m.group(1)))
-    for p in snapshot_dir.glob("step_*_u_s.npy"):
-        m = re.match(r"step_(\d{6})_u_s\.npy$", p.name)
-        if m: steps.add(int(m.group(1)))
-    return sorted(steps)
 
-def load_step(snapshot_dir: Path, step: int):
-    """
-    Load one step into a dict:
-      u_s, u_s_old, x_s, y_s, z_s, (optional) G_flat, R_flat
-    Works with either step_XXXXXX.npz or the individual .npy files.
-    """
-    base = f"step_{step:06d}"
-    npz = snapshot_dir / f"{base}.npz"
-    data = {}
-    if npz.exists():
-        with np.load(npz) as Z:
-            for key in ("u_s", "u_s_old", "x_s", "y_s", "z_s"):
-                data[key] = Z[key]
-            if "G_flat" in Z: data["G_flat"] = Z["G_flat"]
-            if "R_flat" in Z: data["R_flat"] = Z["R_flat"]
-        return data
-
-    # .npy set
-    req = {
-        "u_s":     snapshot_dir / f"{base}_u_s.npy",
-        "u_s_old": snapshot_dir / f"{base}_u_s_old.npy",
-        "x_s":     snapshot_dir / f"{base}_x_s.npy",
-        "y_s":     snapshot_dir / f"{base}_y_s.npy",
-        "z_s":     snapshot_dir / f"{base}_z_s.npy",
-    }
-    for k, p in req.items():
-        if not p.exists():
-            raise FileNotFoundError(f"Missing required file for step {step}: {p}")
-        data[k] = np.load(p)
-
-    opt = {
-        "G_flat": snapshot_dir / f"{base}_G_flat.npy",
-        "R_flat": snapshot_dir / f"{base}_R_flat.npy",
-    }
-    for k, p in opt.items():
-        if p.exists():
-            data[k] = np.load(p)
-
-    return data
 
 def G2L_3D_arr(idxx: np.ndarray, nx: int, ny: int, nz: int):
     """Flat (Fortran) indices -> (i,j,k)."""
@@ -126,7 +215,7 @@ def main():
     ap = argparse.ArgumentParser(
         description="Hermes post-process: export Ts isosurface with G/R and temperature volume to VTK (phys auto-loaded from sim.ini)."
     )
-    ap.add_argument("--path", required=True,
+    ap.add_argument("--output_path", required=True,
                     help="Path to output tag dir (contains 'snapshots/'). Example: /abs/.../outputs/demo_run")
     ap.add_argument("--steps", default="last",
                     help="Which steps: 'all', 'last', 'N', 'N:M', or comma list '10,20,30'. Default: last")
@@ -138,9 +227,12 @@ def main():
                     help="Do not generate R surface VTK (even if R_flat exists).")
     ap.add_argument("--config", default=None,
                     help="Optional path to sim.ini. If omitted, tries PATH/sim.ini; else falls back to repo configs/sim.ini.")
+    ap.add_argument("--layers", default="all",
+                help="Which layers to export: 'all', 'L', 'L1,L2', or 'A:B'. Default: all")
     args = ap.parse_args()
 
-    base_path = Path(args.path).resolve()
+    project_root = Path(__file__).resolve().parents[3]
+    base_path =  (project_root / args.path).resolve()
     snapshot_dir = base_path / "snapshots"
     if not snapshot_dir.is_dir():
         raise FileNotFoundError(f"Snapshots folder not found: {snapshot_dir}")
@@ -148,7 +240,7 @@ def main():
     # ---- locate config ----
     cfg_path = None
     if args.config:
-        c = Path(args.config).resolve()
+        c =  (project_root / args.config).resolve()
         if not c.is_file():
             raise FileNotFoundError(f"--config not found: {c}")
         cfg_path = c
@@ -182,26 +274,39 @@ def main():
     def temp_dim(u_nd):    # nondimensional -> K
         return u_nd * deltaT + Ts
 
-    # ---- select steps ----
-    steps_all = list_steps(snapshot_dir)
-    if not steps_all:
+    # ---- discover available (layer, step) pairs ----
+    
+    layered, pairs = list_indexed(snapshot_dir)
+    if not pairs:
         raise RuntimeError(f"No snapshots found in {snapshot_dir}")
+   
+    avail_layers = sorted(set(L for (L, _) in pairs if L is not None)) if layered else []
+    avail_steps  = sorted(set(S for (_, S) in pairs))
 
-    sel = args.steps.strip().lower()
-    if sel == "all":
-        steps = steps_all
-    elif sel == "last":
-        steps = [steps_all[-1]]
-    elif re.match(r"^\d+:\d+$", sel):
-        a, b = map(int, sel.split(":"))
-        steps = [s for s in steps_all if a <= s <= b]
-    elif re.match(r"^\d+(,\d+)*$", sel):
-        wanted = set(map(int, sel.split(",")))
-        steps = [s for s in steps_all if s in wanted]
-    elif sel.isdigit():
-        steps = [int(sel)]
+    sel_steps = args.steps.strip().lower()
+    if sel_steps == "last":
+        wanted_steps = [avail_steps[-1]]
     else:
-        raise ValueError(f"Unrecognized --steps spec: {args.steps}")
+        wanted_steps = parse_index_spec(sel_steps, avail_steps)
+    if not wanted_steps:
+        raise SystemExit(f"No steps matched --steps={args.steps!r} among {avail_steps}")
+
+    if layered:
+        wanted_layers = parse_index_spec(args.layers, avail_layers) if args.layers != "all" else avail_layers
+        if not wanted_layers:
+            raise SystemExit(f"No layers matched --layers={args.layers!r} among {avail_layers}")
+    else:
+        wanted_layers = [None]  # legacy
+
+    print(f"[info] layered naming: {layered}")
+    if layered:
+        print(f"[info] Layers available: {avail_layers}; selected: {wanted_layers}")
+    print(f"[info] Steps available: {avail_steps[:8]}{'...' if len(avail_steps)>8 else ''}; selected: {wanted_steps}")
+
+    sel_pairs = [(L, S) for (L, S) in pairs
+                 if (S in wanted_steps) and ((L in wanted_layers) if layered else True)]
+    if not sel_pairs:
+        raise SystemExit("No (layer, step) pairs matched your selection.")
 
     # ---- output dirs ----
     out_root = ensure_dir(base_path / "VTK")
@@ -211,12 +316,17 @@ def main():
 
     print(f"[info] sim.ini: {cfg_path}")
     print(f"[info] Ts={Ts} K, Tl={Tl} K, ΔT={deltaT} K, len_scale={len_scale}, time_scale={time_scale}")
-    print(f"[info] Steps: {steps}")
+    # print(f"[info] Steps: {steps}")
     print(f"[info] Writing under: {out_root}")
+    
 
-    for step in steps:
-        print(f"\n=== step {step:06d} ===")
-        D = load_step(snapshot_dir, step)
+    for L, step in sel_pairs:
+        if layered:
+            print(f"\n=== layer {L} — step {step:09d} ===")
+        else:
+            print(f"\n=== step {step:06d} ===")
+
+        D = load_indexed(snapshot_dir, L, step)
 
         u_s      = D["u_s"]       # flat (Fortran order)
         u_s_old  = D["u_s_old"]
@@ -246,7 +356,8 @@ def main():
                 scal = numpy_support.numpy_to_vtk(Tdim.ravel(order="F"))
                 scal.SetName("temperature_K")
                 grid.point_data.scalars = scal
-                outT = out_T / f"UT_step_{step:06d}.vtk"
+                fname = f"T_{('layer_%d_'%L) if layered else ''}step_{step:09d}.vtk"
+                outT = out_T / fname
                 write_data(grid, str(outT))
                 print(f"  Wrote temperature volume: {outT}")
             continue
@@ -308,7 +419,8 @@ def main():
             scal = numpy_support.numpy_to_vtk(G_K_per_um.astype(np.float64))
             scal.SetName("G_K_per_um")
             poly.point_data.scalars = scal
-            outG = out_G / f"vtkG_step_{step:06d}.vtk"
+            fname = f"vtkG_{('layer_%d_'%L) if layered else ''}step_{step:09d}.vtk"
+            outG = out_G / fname
             write_data(poly, str(outG))
             print(f"  Wrote G surface: {outG}")
         else:
@@ -335,7 +447,8 @@ def main():
             scal = numpy_support.numpy_to_vtk(R_um_per_us.astype(np.float64))
             scal.SetName("R_um_per_us")
             poly.point_data.scalars = scal
-            outR = out_R / f"vtkR_step_{step:06d}.vtk"
+            fname = f"vtkR_{('layer_%d_'%L) if layered else ''}step_{step:09d}.vtk"
+            outR = out_R / fname
             write_data(poly, str(outR))
             print(f"  Wrote R surface: {outR}")
         else:
@@ -355,7 +468,7 @@ def main():
             scal = numpy_support.numpy_to_vtk(Tdim.ravel(order="F"))
             scal.SetName("temperature_K")
             grid.point_data.scalars = scal
-            outT = out_T / f"UT_step_{step:06d}.vtk"
+            outT = out_T / f"T_step_{step:09d}.vtk"
             write_data(grid, str(outT))
             print(f"  Wrote temperature volume: {outT}")
 
