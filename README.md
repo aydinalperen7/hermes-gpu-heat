@@ -9,8 +9,9 @@ This solver is being developed as part of a research project on **fast, scalable
 
 ## Features
 - Multi-level nested domains (Level-1, Level-2, Level-3) with different grid resolutions.  
-- Domains move with the laser in the global frame.  
-- Achieves relative errors as low as 1e-5 on thermal gradients and cooling rates for parts on the order of centimeters.  
+- Domains move with the laser in the global frame.
+- Fast extraction of thermal gradient, G and solidification velocity, R. 
+- Achieves relative errors as low as 1e-5 on G and R for parts on the order of centimeters.  
 - Flexible time stepping: **CFL-based** or **fixed dt** (from config). 
 - Configurable laser parameters, grid sizes, and material properties via `sim.ini`.  
 - Flexible **laser path definition**: straight, raster, segments, explicit waypoints, or traced from a picture.
