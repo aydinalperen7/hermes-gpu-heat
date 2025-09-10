@@ -54,7 +54,7 @@ export CUDA_HOME=$TACC_CUDA_DIR
 export LD_LIBRARY_PATH=/usr/lib64/:$LD_LIBRARY_PATH
 
 # Add repo to Python path
-export PYTHONPATH="/work/09143/halperen/vista/HERMES/src:$PYTHONPATH"
+export PYTHONPATH="/work/09143/halperen/vista/hermes-gpu-heat/src:$PYTHONPATH"
 ```
 
 
