@@ -172,9 +172,9 @@ Example console output from this run:
 ```text
 [info] Layers available: [1]; selected: [1]
 [info] Steps available: [17858]; selected: [17858]
-[info] sim.ini: /work/09143/halperen/vista/hermom/HERMOM/configs/sim_ex1.ini
+[info] sim.ini: /work/09143/halperen/vista/hermes-gpu-heat/configs/sim_ex1.ini
 [info] Ts=1658.0 K, Tl=1723.0 K, ΔT=65.0 K, len_scale=0.023057365490123424, time_scale=147.14671993697004
-[info] Writing under: /work/09143/halperen/vista/hermom/HERMOM/outputs/example1_Q70_r25_v1/VTK
+[info] Writing under: /work/09143/halperen/vista/hermes-gpu-heat/outputs/example1_Q70_r25_v1/VTK
 
 === layer 1 — step 000017858 ===
   Melt extents [μm]: x=78.0, y=360.0, z=34.5
