@@ -1,1 +1,36 @@
-from dataclasses import dataclass@dataclassclass GridState:    # level 1    x_s: any; X_s: any; x_s2: any    y_s: any; Y_s: any; y_s2: any    # level 2    x_s_level2: any; X_s_level2: any; x_s2_level2: any    y_s_level2: any; Y_s_level2: any; y_s2_level2: any    # level 3 (lin)    x_lin: any; X_lin: any    y_lin: any; Y_lin: any    # movement operations ----    def move_y(self, velocity, iii):        if iii != 0:            self.y_s[:] += velocity; self.y_s2[:] += velocity; self.Y_s[:] += velocity            self.y_s_level2[:] += velocity; self.y_s2_level2[:] += velocity; self.Y_s_level2[:] += velocity            self.y_lin[:] += velocity; self.Y_lin[:] += velocity    def move_x(self, velocity, iii):        if iii != 0:            self.x_s[:] += velocity; self.x_s2[:] += velocity; self.X_s[:] += velocity            self.x_s_level2[:] += velocity; self.x_s2_level2[:] += velocity; self.X_s_level2[:] += velocity            self.x_lin[:] += velocity; self.X_lin[:] += velocity    def reset_y(self, y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0):        self.y_s[:] = y_s0.copy(); self.y_s2[:] = y_s20.copy(); self.Y_s[:] = Y_s0.copy()        self.y_s_level2[:] = y_s0_level2.copy(); self.y_s2_level2[:] = y_s20_level2.copy(); self.Y_s_level2[:] = Y_s0_level2.copy()        self.y_lin[:] = y_lin0.copy(); self.Y_lin[:] = Y_lin0.copy()    def reset_x(self, x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0):        self.x_s[:] = x_s0.copy(); self.x_s2[:] = x_s20.copy(); self.X_s[:] = X_s0.copy()        self.x_s_level2[:] = x_s0_level2.copy(); self.x_s2_level2[:] = x_s20_level2.copy(); self.X_s_level2[:] = X_s0_level2.copy()        self.x_lin[:] = x_lin0.copy(); self.X_lin[:] = X_lin0.copy()
+from dataclasses import dataclass
+
+@dataclass
+class GridState:
+    # level 1
+    x_s: any; X_s: any; x_s2: any
+    y_s: any; Y_s: any; y_s2: any
+    # level 2
+    x_s_level2: any; X_s_level2: any; x_s2_level2: any
+    y_s_level2: any; Y_s_level2: any; y_s2_level2: any
+    # level 3 (lin)
+    x_lin: any; X_lin: any
+    y_lin: any; Y_lin: any
+
+    # movement operations ----
+    def move_y(self, velocity, iii):
+        if iii != 0:
+            self.y_s[:] += velocity; self.y_s2[:] += velocity; self.Y_s[:] += velocity
+            self.y_s_level2[:] += velocity; self.y_s2_level2[:] += velocity; self.Y_s_level2[:] += velocity
+            self.y_lin[:] += velocity; self.Y_lin[:] += velocity
+
+    def move_x(self, velocity, iii):
+        if iii != 0:
+            self.x_s[:] += velocity; self.x_s2[:] += velocity; self.X_s[:] += velocity
+            self.x_s_level2[:] += velocity; self.x_s2_level2[:] += velocity; self.X_s_level2[:] += velocity
+            self.x_lin[:] += velocity; self.X_lin[:] += velocity
+
+    def reset_y(self, y_s0, Y_s0, y_s20, y_s0_level2, Y_s0_level2, y_s20_level2, y_lin0, Y_lin0):
+        self.y_s[:] = y_s0.copy(); self.y_s2[:] = y_s20.copy(); self.Y_s[:] = Y_s0.copy()
+        self.y_s_level2[:] = y_s0_level2.copy(); self.y_s2_level2[:] = y_s20_level2.copy(); self.Y_s_level2[:] = Y_s0_level2.copy()
+        self.y_lin[:] = y_lin0.copy(); self.Y_lin[:] = Y_lin0.copy()
+
+    def reset_x(self, x_s0, X_s0, x_s20, x_s0_level2, X_s0_level2, x_s20_level2, x_lin0, X_lin0):
+        self.x_s[:] = x_s0.copy(); self.x_s2[:] = x_s20.copy(); self.X_s[:] = X_s0.copy()
+        self.x_s_level2[:] = x_s0_level2.copy(); self.x_s2_level2[:] = x_s20_level2.copy(); self.X_s_level2[:] = X_s0_level2.copy()
+        self.x_lin[:] = x_lin0.copy(); self.X_lin[:] = X_lin0.copy()
