@@ -1,1 +1,309 @@
-import cupy as cpfrom typing import Dict, Anyfrom hermes.kernels.interp import trilinear_interpolation __all__ = [    "Index_3D_to_1D",    "xy_index",    "xy_index_negative",    "grid_movement_index",]def Index_3D_to_1D(x_ind0, x_ind1, y_ind0, yind1, array):    """    Return a Fortran-order 1D view of array[x_ind0:x_ind1+1, y_ind0:yind1+1, 0:].    """    slice_3d = array[x_ind0:x_ind1+1, y_ind0:yind1+1, 0:]    return slice_3d.ravel(order='F')def xy_index(coord, velocity, t_len=None):    """    Find the first index where coord + velocity * cnt leaves [coord[0], coord[-1]].    If t_len is provided, stop after t_len iterations (return None).    """    flag = True    cnt_temp = 1    while flag:        temp_array = coord + velocity * cnt_temp        interval_start = coord[0]        interval_end   = coord[-1]        outside = (temp_array < interval_start) | (temp_array > interval_end)        if cp.any(outside):            return int(cp.argmax(outside))        cnt_temp += 1        if t_len is not None and cnt_temp > t_len:            return Nonedef xy_index_negative(coord, velocity, t_len=None):    """    Same as xy_index but steps in the negative direction: coord - velocity * cnt.    """    flag = True    cnt_temp = 1    while flag:        temp_array = coord - velocity * cnt_temp        interval_start = coord[0]        interval_end   = coord[-1]        outside = (temp_array < interval_start) | (temp_array > interval_end)        if cp.any(outside):            return int(cp.argmin(outside))        cnt_temp += 1        if t_len is not None and cnt_temp > t_len:            return Nonedef grid_movement_index(coordx, coordy, velocity, nx, ny, nz, t_len=None):    """    Build index masks/slices for split regions after a uniform grid movement.    Returns:      (index_y, index_x, index_y_neg, index_x_neg,       slice_1d_in_y, slice_1d_out_y,       slice_1d_in_x, slice_1d_out_x,       slice_1d_in_x_negative, slice_1d_out_x_negative,       slice_1d_in_y_negative, slice_1d_out_y_negative)    """    array1 = cp.arange(nx * ny * nz).reshape([nx, ny, nz], order="F")    index_y     = xy_index(coordy, velocity, t_len=t_len)    index_x     = xy_index(coordx, velocity, t_len=t_len)    index_y_neg = xy_index_negative(coordy, velocity, t_len=t_len)    index_x_neg = xy_index_negative(coordx, velocity, t_len=t_len)    # NOTE: This matches your original inclusive-end convention (x_ind1+1).    slice_1d_in_y  = Index_3D_to_1D(0, coordx.shape[0], 0, index_y-1,     array1)    slice_1d_out_y = Index_3D_to_1D(0, coordx.shape[0], index_y, coordy.shape[0], array1)    slice_1d_in_x  = Index_3D_to_1D(0, index_x-1,       0, coordy.shape[0], array1)    slice_1d_out_x = Index_3D_to_1D(index_x, coordx.shape[0], 0, coordy.shape[0], array1)    slice_1d_in_x_negative  = Index_3D_to_1D(index_x_neg, coordx.shape[0], 0, coordy.shape[0], array1)    slice_1d_out_x_negative = Index_3D_to_1D(0, index_x_neg-1, 0, coordy.shape[0], array1)    slice_1d_in_y_negative  = Index_3D_to_1D(0, coordx.shape[0], index_y_neg, coordy.shape[0], array1)    slice_1d_out_y_negative = Index_3D_to_1D(0, coordx.shape[0], 0, index_y_neg-1, array1)    return (        index_y, index_x, index_y_neg, index_x_neg,        slice_1d_in_y, slice_1d_out_y,        slice_1d_in_x, slice_1d_out_x,        slice_1d_in_x_negative, slice_1d_out_x_negative,        slice_1d_in_y_negative, slice_1d_out_y_negative    )def precompute_for_update(    u, nx, ny, nz,    y, y_index,    x, x_index,    slice_1d_in, slice_1d_out,    z,    *,    float_type) -> Dict[str, Any]:        u_in  = cp.zeros_like(u[slice_1d_in], dtype=float_type)    u_out = cp.zeros_like(u[slice_1d_out], dtype=float_type)    ny_in  = int(y[0:y_index].shape[0])    ny_out = int(y[y_index:].shape[0])    nx_in  = int(x[0:x_index].shape[0])    nx_out = int(x[x_index:].shape[0])    xoldmin = float_type(x[0].get())    yoldmin = float_type(y[0].get())    zoldmin = float_type(z[0].get())    tpbin  = 128    tpbout = 128    blocks_in_y  = (nx * ny_in  * nz + (tpbin -1)) // tpbin    blocks_out_y = (nx * ny_out * nz + (tpbout-1)) // tpbout    tpbin_x  = 128    tpbout_x = 128    blocks_in_x  = (nx_in  * ny * nz + (tpbin_x -1)) // tpbin_x    blocks_out_x = (nx_out * ny * nz + (tpbout_x-1)) // tpbout_x    return dict(        u_in=u_in, u_out=u_out,        ny_in=ny_in, ny_out=ny_out, nx_in=nx_in, nx_out=nx_out,        xoldmin=xoldmin, yoldmin=yoldmin, zoldmin=zoldmin,        blocks_in_y=blocks_in_y, blocks_out_y=blocks_out_y,        blocks_in_x=blocks_in_x, blocks_out_x=blocks_out_x,        tpbin=tpbin, tpbout=tpbout, tpbin_x=tpbin_x, tpbout_x=tpbout_x,    )def update_after_movementy2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx, ny_in, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  ny_out, uout, one, val3, slice_1d_in, slice_1d_out, index_y, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):    '''    x,y,z: New coordinates after movement    val:  The current value of the grid before update (u_s or u_s_level2)    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)    hxval, hyval, hzval: Should match the spacing of vals coordinates    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)    nx, ny_in, nz , ny_out: Grid size of uin nx*nz*ny_in and grid size of uout is nx*nz*ny_out            val2: Value of outer level (before update and movement)    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)        '''    yin = y[0:index_y]    yout = y[index_y:]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)        val3[slice_1d_in] = uin    val3[slice_1d_out] = uoutdef update_after_movementy2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx, ny_in, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  ny_out, uout, one, val3, slice_1d_in, slice_1d_out, index_y, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):    '''    x,y,z: New coordinates after movement    val:  The current value of the grid before update (u_s or u_s_level2)    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)    hxval, hyval, hzval: Should match the spacing of vals coordinates    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)    ny, nx_in, nz , nx_out: Grid size of uin nx*nz*ny_in and grid size of uout is ny*nz*nx_out            val2: Value of outer level (before update and movement)    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)    '''    yin = y[index_y+1:]    yout = y[0:index_y+1]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)        val3[slice_1d_in] = uin    val3[slice_1d_out] = uoutdef update_after_movementx2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx_in, ny, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  nx_out, uout, one, val3, slice_1d_in, slice_1d_out, index_x, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):    '''    x,y,z: New coordinates after movement    val:  The current value of the grid before update (u_s or u_s_level2)    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)    hxval, hyval, hzval: Should match the spacing of vals coordinates    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)    ny, nx_in, nz , nx_out: Grid size of uin nx*nz*ny_in and grid size of uout is ny*nz*nx_out            val2: Value of outer level (before update and movement)    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)    '''    xin = x[0:index_x]    xout = x[index_x:]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)        trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)        val3[slice_1d_in] = uin    val3[slice_1d_out] = uout    def update_after_movementx2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx_in, ny, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  nx_out, uout, one, val3, slice_1d_in, slice_1d_out, index_x, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):    '''    x,y,z: New coordinates after movement    val:  The current value of the grid before update (u_s or u_s_level2)    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)    hxval, hyval, hzval: Should match the spacing of vals coordinates    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)    ny, nx_in, nz , nx_out: Grid size of uin nx*nz*ny_in and grid size of uout is ny*nz*nx_out            val2: Value of outer level (before update and movement)    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)    '''    xin = x[index_x+1:]    xout = x[0:index_x+1]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)        trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)        val3[slice_1d_in] = uin    val3[slice_1d_out] = uoutdef update_after_movement_level3y_2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx, ny_in, nz, uin,  slice_1d_in, slice_1d_out, index_y, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):    '''    x,y,z: New coords after movement    val: u_lin before update    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)    nx, ny_in, nz: size of uin    '''        yin = y[0:index_y]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)    val3[slice_1d_in] = uin    val3[slice_1d_out] = u0def update_after_movement_level3y_2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx, ny_in, nz, uin,  slice_1d_in, slice_1d_out, index_y, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):    '''    x,y,z: New coords after movement    val: u_lin before update    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)    ny, nx_in, nz: size of uin    '''        yin = y[index_y+1:]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)    val3[slice_1d_in] = uin    val3[slice_1d_out] = u0def update_after_movement_level3x_2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx_in, ny, nz, uin,  slice_1d_in, slice_1d_out, index_x, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):    '''    x,y,z: New coords after movement    val: u_lin before update    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)    ny, nx_in, nz: size of uin    '''        xin = x[0:index_x]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)    val3[slice_1d_in] = uin    val3[slice_1d_out] = u0    def update_after_movement_level3x_2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx_in, ny, nz, uin,  slice_1d_in, slice_1d_out, index_x, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):    '''    x,y,z: New coords after movement    val: u_lin before update    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)    ny, nx_in, nz: size of uin    '''        xin = x[index_x+1:]    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)    val3[slice_1d_in] = uin    val3[slice_1d_out] = u0
+import cupy as cp
+from typing import Dict, Any
+from hermes.kernels.interp import trilinear_interpolation 
+
+
+
+__all__ = [
+    "Index_3D_to_1D",
+    "xy_index",
+    "xy_index_negative",
+    "grid_movement_index",
+]
+
+def Index_3D_to_1D(x_ind0, x_ind1, y_ind0, yind1, array):
+    """
+    Return a Fortran-order 1D view of array[x_ind0:x_ind1+1, y_ind0:yind1+1, 0:].
+    """
+    slice_3d = array[x_ind0:x_ind1+1, y_ind0:yind1+1, 0:]
+    return slice_3d.ravel(order='F')
+
+def xy_index(coord, velocity, t_len=None):
+    """
+    Find the first index where coord + velocity * cnt leaves [coord[0], coord[-1]].
+    If t_len is provided, stop after t_len iterations (return None).
+    """
+    flag = True
+    cnt_temp = 1
+    while flag:
+        temp_array = coord + velocity * cnt_temp
+        interval_start = coord[0]
+        interval_end   = coord[-1]
+        outside = (temp_array < interval_start) | (temp_array > interval_end)
+
+        if cp.any(outside):
+            return int(cp.argmax(outside))
+        cnt_temp += 1
+        if t_len is not None and cnt_temp > t_len:
+            return None
+
+def xy_index_negative(coord, velocity, t_len=None):
+    """
+    Same as xy_index but steps in the negative direction: coord - velocity * cnt.
+    """
+    flag = True
+    cnt_temp = 1
+    while flag:
+        temp_array = coord - velocity * cnt_temp
+        interval_start = coord[0]
+        interval_end   = coord[-1]
+        outside = (temp_array < interval_start) | (temp_array > interval_end)
+
+        if cp.any(outside):
+            return int(cp.argmin(outside))
+        cnt_temp += 1
+        if t_len is not None and cnt_temp > t_len:
+            return None
+
+def grid_movement_index(coordx, coordy, velocity, nx, ny, nz, t_len=None):
+    """
+    Build index masks/slices for split regions after a uniform grid movement.
+    Returns:
+      (index_y, index_x, index_y_neg, index_x_neg,
+       slice_1d_in_y, slice_1d_out_y,
+       slice_1d_in_x, slice_1d_out_x,
+       slice_1d_in_x_negative, slice_1d_out_x_negative,
+       slice_1d_in_y_negative, slice_1d_out_y_negative)
+    """
+    array1 = cp.arange(nx * ny * nz).reshape([nx, ny, nz], order="F")
+
+    index_y     = xy_index(coordy, velocity, t_len=t_len)
+    index_x     = xy_index(coordx, velocity, t_len=t_len)
+    index_y_neg = xy_index_negative(coordy, velocity, t_len=t_len)
+    index_x_neg = xy_index_negative(coordx, velocity, t_len=t_len)
+
+    # NOTE: This matches your original inclusive-end convention (x_ind1+1).
+    slice_1d_in_y  = Index_3D_to_1D(0, coordx.shape[0], 0, index_y-1,     array1)
+    slice_1d_out_y = Index_3D_to_1D(0, coordx.shape[0], index_y, coordy.shape[0], array1)
+
+    slice_1d_in_x  = Index_3D_to_1D(0, index_x-1,       0, coordy.shape[0], array1)
+    slice_1d_out_x = Index_3D_to_1D(index_x, coordx.shape[0], 0, coordy.shape[0], array1)
+
+    slice_1d_in_x_negative  = Index_3D_to_1D(index_x_neg, coordx.shape[0], 0, coordy.shape[0], array1)
+    slice_1d_out_x_negative = Index_3D_to_1D(0, index_x_neg-1, 0, coordy.shape[0], array1)
+
+    slice_1d_in_y_negative  = Index_3D_to_1D(0, coordx.shape[0], index_y_neg, coordy.shape[0], array1)
+    slice_1d_out_y_negative = Index_3D_to_1D(0, coordx.shape[0], 0, index_y_neg-1, array1)
+
+    return (
+        index_y, index_x, index_y_neg, index_x_neg,
+        slice_1d_in_y, slice_1d_out_y,
+        slice_1d_in_x, slice_1d_out_x,
+        slice_1d_in_x_negative, slice_1d_out_x_negative,
+        slice_1d_in_y_negative, slice_1d_out_y_negative
+    )
+
+
+def precompute_for_update(
+    u, nx, ny, nz,
+    y, y_index,
+    x, x_index,
+    slice_1d_in, slice_1d_out,
+    z,
+    *,
+    float_type
+) -> Dict[str, Any]:
+
+    
+    u_in  = cp.zeros_like(u[slice_1d_in], dtype=float_type)
+    u_out = cp.zeros_like(u[slice_1d_out], dtype=float_type)
+
+    ny_in  = int(y[0:y_index].shape[0])
+    ny_out = int(y[y_index:].shape[0])
+
+    nx_in  = int(x[0:x_index].shape[0])
+    nx_out = int(x[x_index:].shape[0])
+
+    xoldmin = float_type(x[0].get())
+    yoldmin = float_type(y[0].get())
+    zoldmin = float_type(z[0].get())
+
+    tpbin  = 128
+    tpbout = 128
+    blocks_in_y  = (nx * ny_in  * nz + (tpbin -1)) // tpbin
+    blocks_out_y = (nx * ny_out * nz + (tpbout-1)) // tpbout
+
+    tpbin_x  = 128
+    tpbout_x = 128
+    blocks_in_x  = (nx_in  * ny * nz + (tpbin_x -1)) // tpbin_x
+    blocks_out_x = (nx_out * ny * nz + (tpbout_x-1)) // tpbout_x
+
+    return dict(
+        u_in=u_in, u_out=u_out,
+        ny_in=ny_in, ny_out=ny_out, nx_in=nx_in, nx_out=nx_out,
+        xoldmin=xoldmin, yoldmin=yoldmin, zoldmin=zoldmin,
+        blocks_in_y=blocks_in_y, blocks_out_y=blocks_out_y,
+        blocks_in_x=blocks_in_x, blocks_out_x=blocks_out_x,
+        tpbin=tpbin, tpbout=tpbout, tpbin_x=tpbin_x, tpbout_x=tpbout_x,
+    )
+
+
+
+
+
+
+def update_after_movementy2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx, ny_in, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  ny_out, uout, one, val3, slice_1d_in, slice_1d_out, index_y, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):
+    '''
+    x,y,z: New coordinates after movement
+    val:  The current value of the grid before update (u_s or u_s_level2)
+    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)
+    hxval, hyval, hzval: Should match the spacing of vals coordinates
+    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)
+    nx, ny_in, nz , ny_out: Grid size of uin nx*nz*ny_in and grid size of uout is nx*nz*ny_out
+    
+    
+    val2: Value of outer level (before update and movement)
+    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2
+    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)
+    
+    '''
+    yin = y[0:index_y]
+    yout = y[index_y:]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)
+    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)
+    
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = uout
+
+def update_after_movementy2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx, ny_in, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  ny_out, uout, one, val3, slice_1d_in, slice_1d_out, index_y, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):
+    '''
+    x,y,z: New coordinates after movement
+    val:  The current value of the grid before update (u_s or u_s_level2)
+    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)
+    hxval, hyval, hzval: Should match the spacing of vals coordinates
+    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)
+    ny, nx_in, nz , nx_out: Grid size of uin nx*nz*ny_in and grid size of uout is ny*nz*nx_out
+    
+    
+    val2: Value of outer level (before update and movement)
+    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2
+    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)
+    '''
+    yin = y[index_y+1:]
+    yout = y[0:index_y+1]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)
+    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)
+    
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = uout
+
+
+
+def update_after_movementx2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx_in, ny, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  nx_out, uout, one, val3, slice_1d_in, slice_1d_out, index_x, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):
+    '''
+    x,y,z: New coordinates after movement
+    val:  The current value of the grid before update (u_s or u_s_level2)
+    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)
+    hxval, hyval, hzval: Should match the spacing of vals coordinates
+    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)
+    ny, nx_in, nz , nx_out: Grid size of uin nx*nz*ny_in and grid size of uout is ny*nz*nx_out
+    
+    
+    val2: Value of outer level (before update and movement)
+    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2
+    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)
+    '''
+    xin = x[0:index_x]
+    xout = x[index_x:]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)    
+    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)
+    
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = uout
+    
+def update_after_movementx2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin,  nx_in, ny, nz, uin, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2,  xold2min, yold2min, zold2min,  nx_out, uout, one, val3, slice_1d_in, slice_1d_out, index_x, threads_per_block_in, blocks_per_grid_in, threads_per_block_out , blocks_per_grid_out):
+    '''
+    x,y,z: New coordinates after movement
+    val:  The current value of the grid before update (u_s or u_s_level2)
+    nx_old, ny_old, nz_old: Should match the size of val (nx_s, ny_s, nz_s or level2)
+    hxval, hyval, hzval: Should match the spacing of vals coordinates
+    xoldmin, yoldmin, zoldmin: Extracted from the coordinate of the level (before movement)
+    ny, nx_in, nz , nx_out: Grid size of uin nx*nz*ny_in and grid size of uout is ny*nz*nx_out
+    
+    
+    val2: Value of outer level (before update and movement)
+    nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2: Grid of val2
+    xold2min, yold2min, zold2min: Extracted from the coordinate of the outer level (before movement)
+    '''
+    xin = x[index_x+1:]
+    xout = x[0:index_x+1]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)    
+    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)
+    
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = uout
+
+
+def update_after_movement_level3y_2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx, ny_in, nz, uin,  slice_1d_in, slice_1d_out, index_y, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):
+    '''
+    x,y,z: New coords after movement
+    val: u_lin before update
+    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val
+    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)
+    nx, ny_in, nz: size of uin
+    '''
+    
+    yin = y[0:index_y]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = u0
+
+
+def update_after_movement_level3y_2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx, ny_in, nz, uin,  slice_1d_in, slice_1d_out, index_y, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):
+    '''
+    x,y,z: New coords after movement
+    val: u_lin before update
+    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val
+    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)
+    ny, nx_in, nz: size of uin
+    '''
+    
+    yin = y[index_y+1:]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = u0
+
+def update_after_movement_level3x_2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx_in, ny, nz, uin,  slice_1d_in, slice_1d_out, index_x, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):
+    '''
+    x,y,z: New coords after movement
+    val: u_lin before update
+    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val
+    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)
+    ny, nx_in, nz: size of uin
+    '''
+    
+    xin = x[0:index_x]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = u0
+    
+def update_after_movement_level3x_2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin,  nx_in, ny, nz, uin,  slice_1d_in, slice_1d_out, index_x, u0 , one,  val3, threads_per_block_in , blocks_per_grid_in):
+    '''
+    x,y,z: New coords after movement
+    val: u_lin before update
+    nx_old, ny_old, nz_old, hxval, hyval, hzval: Grid of val
+    xoldmin_lin, yoldmin_lin, zoldmin_lin: Extracted from the coordinate of the level (before movement)
+    ny, nx_in, nz: size of uin
+    '''
+    
+    xin = x[index_x+1:]
+
+    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)
+
+    val3[slice_1d_in] = uin
+    val3[slice_1d_out] = u0
+
