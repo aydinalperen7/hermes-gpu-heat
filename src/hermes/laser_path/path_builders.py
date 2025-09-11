@@ -1,1 +1,313 @@
-from __future__ import annotationsimport numpy as npfrom matplotlib.path import Pathfrom skimage import io, color, filters, measurefrom scipy.interpolate import splprep, splevimport math# ---------- helpers ----------def _parse_dir_to_unit(dir_str: str) -> tuple[float, float]:    """    Parse 'dir' like '+y', '-x', or diagonal '+y,+x' into a unit vector (vx, vy).    """    tok = [t.strip().lower() for t in dir_str.split(",") if t.strip()]    sx = 0    sy = 0    for t in tok:        if t == "+x": sx += 1        elif t == "-x": sx -= 1        elif t == "+y": sy += 1        elif t == "-y": sy -= 1        else:            raise ValueError(f"Unknown direction token in dir={dir_str!r}: {t!r}")    if sx == 0 and sy == 0:        raise ValueError(f"dir={dir_str!r} results in zero direction.")    n = math.hypot(sx, sy)    return sx / n, sy / ndef _unit_from_dir(dir_str: str) -> tuple[float, float]:    d = dir_str.strip().lower()    if   d in {"+x", "x+", "posx"}: return (1.0, 0.0)    elif d in {"-x", "x-", "negx"}: return (-1.0, 0.0)    elif d in {"+y", "y+", "posy"}: return (0.0, 1.0)    elif d in {"-y", "y-", "negy"}: return (0.0, -1.0)    raise ValueError(f"Unknown dir: {dir_str!r}")        def _to_nd(x_m: float, len_scale: float) -> float:    return float(x_m) / float(len_scale)def _stack_pts(pts: list[tuple[float, float]]) -> np.ndarray:    if not pts:        return np.zeros((0,2), dtype=float)    return np.asarray(pts, dtype=float)# ---------- 1) single-line scan ----------def build_single_line_nd(*,                         start_xy_m: tuple[float, float],                         length_m: float,                         dir_str: str | None,                         len_scale: float,                         vx: float | None = None,                         vy: float | None = None) -> np.ndarray:    """    Returns 2-point polyline (start, end) in NON-DIMENSIONAL units.    dir_str supports '+x', '-x', '+y', '-y', and diagonals like '+y,+x'.    Alternatively, pass (vx, vy) as a unit vector (one of dir_str or vx/vy).    """    if dir_str is not None:        ux, uy = _parse_dir_to_unit(dir_str)    else:        if vx is None or vy is None:            raise ValueError("Provide either dir_str or (vx, vy).")        n = math.hypot(vx, vy)        if n == 0:            raise ValueError("(vx, vy) must be non-zero.")        ux, uy = vx / n, vy / n    x0_m, y0_m = float(start_xy_m[0]), float(start_xy_m[1])    x1_m = x0_m + length_m * ux    y1_m = y0_m + length_m * uy    waypoints_m = np.array([[x0_m, y0_m], [x1_m, y1_m]], dtype=float)    waypoints_nd = waypoints_m / float(len_scale)    return waypoints_nd# ---------- 2) segments (piecewise) ----------def build_segments_nd(*,    start_xy_m: tuple[float, float],    segments: list[dict],   # each dict: {"length_m":..., "dir": "+x" | "-y" | ...} or {"length_m":..., "vx":..., "vy":...}    repeat: int = 1,    len_scale: float) -> np.ndarray:    x_m, y_m = start_xy_m    path: list[tuple[float, float]] = [(x_m, y_m)]    for _ in range(max(1, int(repeat))):        for seg in segments:            L = float(seg["length_m"])            if "dir" in seg:                ux, uy = _unit_from_dir(seg["dir"])            else:                vx, vy = float(seg["vx"]), float(seg["vy"])                nrm = (vx*vx + vy*vy) ** 0.5                if nrm == 0.0:                    raise ValueError("segment with zero direction")                ux, uy = vx/nrm, vy/nrm            x_m += ux * L            y_m += uy * L            path.append((x_m, y_m))    return np.column_stack([        [ _to_nd(px, len_scale) for px, _ in path ],        [ _to_nd(py, len_scale) for _, py in path ],    ])# ---------- 3) raster / serpentine ----------def build_raster_nd(*,    origin_m: tuple[float, float],   # lower-left corner (x0,y0) in meters    width_m: float,                  # length along scan axis    height_m: float,                 # extent along stepping axis    line_pitch_m: float | None = None,    passes: int | None = None,    x_dir_sign: int = +1,            # first line direction sign (+1 or -1) along scan axis    x_major: bool = True,            # True: scan along x, step in y; False: scan along y, step in x    len_scale: float) -> np.ndarray:    x0_m, y0_m = origin_m    # decide passes & pitch    if passes is None and line_pitch_m is None:        raise ValueError("Provide either passes or line_pitch_m for raster.")    if passes is not None and line_pitch_m is None:        passes = int(passes)        if passes < 1:            raise ValueError("passes must be >= 1")        line_pitch_m = height_m / max(passes - 1, 1) if passes > 1 else 0.0    elif passes is None and line_pitch_m is not None:        if height_m <= 0:            passes = 1            line_pitch_m = 0.0        else:            passes = int(round(height_m / line_pitch_m)) + 1    else:        # both given: we’ll honor passes and ignore any mismatch        passes = int(passes)    pts: list[tuple[float, float]] = []    dir_sign = int(np.sign(x_dir_sign)) or +1    for p in range(passes):        step_val = p * line_pitch_m        if x_major:            # scan along x            y_m = y0_m + step_val            if dir_sign > 0:                x_start, x_end = x0_m, x0_m + width_m            else:                x_start, x_end = x0_m + width_m, x0_m            pts.append((x_start, y_m))            pts.append((x_end,   y_m))        else:            # scan along y (swap roles)            x_m = x0_m + step_val            if dir_sign > 0:                y_start, y_end = y0_m, y0_m + width_m            else:                y_start, y_end = y0_m + width_m, y0_m            pts.append((x_m, y_start))            pts.append((x_m, y_end))        dir_sign *= -1  # serpentine    # convert to ND    return np.column_stack([        [ _to_nd(px, len_scale) for px, _ in pts ],        [ _to_nd(py, len_scale) for _, py in pts ],    ])# ---------- 4) explicit waypoints ----------def build_waypoints_nd(*,    waypoints_m: list[tuple[float, float]],  # [(x_m, y_m), ...]    close_loop: bool = False,    len_scale: float) -> np.ndarray:    pts = list(waypoints_m)    if close_loop and len(pts) >= 2:        pts.append(pts[0])    return np.column_stack([        [ _to_nd(px, len_scale) for px, _ in pts ],        [ _to_nd(py, len_scale) for _, py in pts ],    ])# --------- 5) Build from picture  --------def extract_image_boundary(img_path: str,                           len_scale: float,                           horizontal_length: float,                           vertical_length: float | None = None):    """    Returns:      x_new_nd, y_new_nd (non-dimensional) and a matplotlib.path.Path for contains_point.    """    img = io.imread(img_path)    # If RGBA, drop alpha channel    if img.ndim == 3 and img.shape[2] == 4:        img = color.rgba2rgb(img)    # Grayscale    if img.ndim == 3:        gray_img = color.rgb2gray(img)    else:        gray_img = img.astype(np.float32)        # Normalize if necessary        if gray_img.max() > 1.0:            m = gray_img.max()            gray_img = gray_img / (m if m != 0 else 1.0)    # Binary by Otsu    thresh = filters.threshold_otsu(gray_img)    binary_img = gray_img > thresh    # Largest contour    contours = measure.find_contours(binary_img, level=0.5)    if not contours:        raise ValueError(f"No contour found in image: {img_path}")    longhorn_contour = max(contours, key=len)    # Flip y so origin behaves bottom-left    height = binary_img.shape[0]    boundary_coords = np.array(longhorn_contour, dtype=float)    boundary_coords[:, 0] = height - boundary_coords[:, 0]    # Spline smooth (periodic)    tck, _ = splprep([boundary_coords[:, 1], boundary_coords[:, 0]], s=0, per=True)    u_new = np.linspace(0.0, 1.0, 200)    x_new, y_new = splev(u_new, tck)     # arrays (in pixel-ish coordinates)    x_new = np.asarray(x_new, dtype=float)    y_new = np.asarray(y_new, dtype=float)    # Scale to non-dimensional lengths    # horizontal_length is in meters -> convert to ND    horizontal_length_nd = float(horizontal_length) / float(len_scale)    if vertical_length is None:        # keep aspect        rngx = (x_new.max() - x_new.min())        rngy = (y_new.max() - y_new.min())        aspect = (rngy / (rngx + 1e-15))        vertical_length_nd = aspect * horizontal_length_nd    else:        vertical_length_nd = float(vertical_length) / float(len_scale)    # Normalize to [0,1] then scale to ND box    x_new_nd = (x_new - x_new.min()) / (x_new.max() - x_new.min() + 1e-15) * horizontal_length_nd    y_new_nd = (y_new - y_new.min()) / (y_new.max() - y_new.min() + 1e-15) * vertical_length_nd    # Path for point-in-polygon test (expects NumPy)    boundary_path = Path(np.column_stack((x_new_nd, y_new_nd)))    return x_new_nd, y_new_nd, boundary_pathdef create_path(x_new_nd: np.ndarray,                y_new_nd: np.ndarray,                boundary_path: Path,                n: int = 100):    """    - Sweep n columns in x (min->max).    - For each column, sweep n samples in y (alternating direction).    - Keep only points 'inside' boundary_path.    Returns list of [x, y] (ND).    """    zigzag_trajectory = []    x_vals = np.linspace(np.min(x_new_nd), np.max(x_new_nd), num=n)    for i, x in enumerate(x_vals):        if i % 2 == 0:            # bottom -> top            y_traj = np.linspace(np.min(y_new_nd), np.max(y_new_nd), num=n)        else:            # top -> bottom            y_traj = np.linspace(np.max(y_new_nd), np.min(y_new_nd), num=n)        for y in y_traj:            if boundary_path.contains_point((x, y)):                zigzag_trajectory.append([x, y])    return zigzag_trajectorydef build_picture_nd(*,                     img_path: str,                     horizontal_length_m: float,                     len_scale: float,                     vertical_length_m: float | None = None,                     n: int = 100) -> np.ndarray:    """    Produces ND waypoints anchored at (0,0).    - img_path: path to image file    - horizontal_length_m: desired width in meters    - vertical_length_m: optional height in meters (keeps aspect if None)    - len_scale: to convert meters -> ND    - n: sampling density    """    x_new_nd, y_new_nd, boundary_path = extract_image_boundary(        img_path=img_path,        len_scale=len_scale,        horizontal_length=horizontal_length_m,        vertical_length=vertical_length_m,    )    zigzag = create_path(x_new_nd, y_new_nd, boundary_path, n=n)    W = np.array(zigzag, dtype=float)    # Anchor to (0,0):    if W.shape[0] >= 1:        W[:, 0] -= W[0, 0]        W[:, 1] -= W[0, 1]    return W  # ND waypoints
+from __future__ import annotations
+import numpy as np
+from matplotlib.path import Path
+from skimage import io, color, filters, measure
+from scipy.interpolate import splprep, splev
+import math
+
+# ---------- helpers ----------
+
+def _parse_dir_to_unit(dir_str: str) -> tuple[float, float]:
+    """
+    Parse 'dir' like '+y', '-x', or diagonal '+y,+x' into a unit vector (vx, vy).
+    """
+    tok = [t.strip().lower() for t in dir_str.split(",") if t.strip()]
+    sx = 0
+    sy = 0
+    for t in tok:
+        if t == "+x": sx += 1
+        elif t == "-x": sx -= 1
+        elif t == "+y": sy += 1
+        elif t == "-y": sy -= 1
+        else:
+            raise ValueError(f"Unknown direction token in dir={dir_str!r}: {t!r}")
+    if sx == 0 and sy == 0:
+        raise ValueError(f"dir={dir_str!r} results in zero direction.")
+    n = math.hypot(sx, sy)
+    return sx / n, sy / n
+
+def _unit_from_dir(dir_str: str) -> tuple[float, float]:
+    d = dir_str.strip().lower()
+    if   d in {"+x", "x+", "posx"}: return (1.0, 0.0)
+    elif d in {"-x", "x-", "negx"}: return (-1.0, 0.0)
+    elif d in {"+y", "y+", "posy"}: return (0.0, 1.0)
+    elif d in {"-y", "y-", "negy"}: return (0.0, -1.0)
+    raise ValueError(f"Unknown dir: {dir_str!r}")
+    
+    
+
+def _to_nd(x_m: float, len_scale: float) -> float:
+    return float(x_m) / float(len_scale)
+
+def _stack_pts(pts: list[tuple[float, float]]) -> np.ndarray:
+    if not pts:
+        return np.zeros((0,2), dtype=float)
+    return np.asarray(pts, dtype=float)
+
+# ---------- 1) single-line scan ----------
+def build_single_line_nd(*,
+                         start_xy_m: tuple[float, float],
+                         length_m: float,
+                         dir_str: str | None,
+                         len_scale: float,
+                         vx: float | None = None,
+                         vy: float | None = None) -> np.ndarray:
+    """
+    Returns 2-point polyline (start, end) in NON-DIMENSIONAL units.
+    dir_str supports '+x', '-x', '+y', '-y', and diagonals like '+y,+x'.
+    Alternatively, pass (vx, vy) as a unit vector (one of dir_str or vx/vy).
+    """
+    if dir_str is not None:
+        ux, uy = _parse_dir_to_unit(dir_str)
+    else:
+        if vx is None or vy is None:
+            raise ValueError("Provide either dir_str or (vx, vy).")
+        n = math.hypot(vx, vy)
+        if n == 0:
+            raise ValueError("(vx, vy) must be non-zero.")
+        ux, uy = vx / n, vy / n
+
+    x0_m, y0_m = float(start_xy_m[0]), float(start_xy_m[1])
+    x1_m = x0_m + length_m * ux
+    y1_m = y0_m + length_m * uy
+
+    waypoints_m = np.array([[x0_m, y0_m], [x1_m, y1_m]], dtype=float)
+    waypoints_nd = waypoints_m / float(len_scale)
+    return waypoints_nd
+
+
+# ---------- 2) segments (piecewise) ----------
+def build_segments_nd(*,
+    start_xy_m: tuple[float, float],
+    segments: list[dict],   # each dict: {"length_m":..., "dir": "+x" | "-y" | ...} or {"length_m":..., "vx":..., "vy":...}
+    repeat: int = 1,
+    len_scale: float
+) -> np.ndarray:
+    x_m, y_m = start_xy_m
+    path: list[tuple[float, float]] = [(x_m, y_m)]
+    for _ in range(max(1, int(repeat))):
+        for seg in segments:
+            L = float(seg["length_m"])
+            if "dir" in seg:
+                ux, uy = _unit_from_dir(seg["dir"])
+            else:
+                vx, vy = float(seg["vx"]), float(seg["vy"])
+                nrm = (vx*vx + vy*vy) ** 0.5
+                if nrm == 0.0:
+                    raise ValueError("segment with zero direction")
+                ux, uy = vx/nrm, vy/nrm
+            x_m += ux * L
+            y_m += uy * L
+            path.append((x_m, y_m))
+    return np.column_stack([
+        [ _to_nd(px, len_scale) for px, _ in path ],
+        [ _to_nd(py, len_scale) for _, py in path ],
+    ])
+
+# ---------- 3) raster / serpentine ----------
+def build_raster_nd(*,
+    origin_m: tuple[float, float],   # lower-left corner (x0,y0) in meters
+    width_m: float,                  # length along scan axis
+    height_m: float,                 # extent along stepping axis
+    line_pitch_m: float | None = None,
+    passes: int | None = None,
+    x_dir_sign: int = +1,            # first line direction sign (+1 or -1) along scan axis
+    x_major: bool = True,            # True: scan along x, step in y; False: scan along y, step in x
+    len_scale: float
+) -> np.ndarray:
+    x0_m, y0_m = origin_m
+
+    # decide passes & pitch
+    if passes is None and line_pitch_m is None:
+        raise ValueError("Provide either passes or line_pitch_m for raster.")
+    if passes is not None and line_pitch_m is None:
+        passes = int(passes)
+        if passes < 1:
+            raise ValueError("passes must be >= 1")
+        line_pitch_m = height_m / max(passes - 1, 1) if passes > 1 else 0.0
+    elif passes is None and line_pitch_m is not None:
+        if height_m <= 0:
+            passes = 1
+            line_pitch_m = 0.0
+        else:
+            passes = int(round(height_m / line_pitch_m)) + 1
+    else:
+        # both given: we’ll honor passes and ignore any mismatch
+        passes = int(passes)
+
+    pts: list[tuple[float, float]] = []
+    dir_sign = int(np.sign(x_dir_sign)) or +1
+
+    for p in range(passes):
+        step_val = p * line_pitch_m
+        if x_major:
+            # scan along x
+            y_m = y0_m + step_val
+            if dir_sign > 0:
+                x_start, x_end = x0_m, x0_m + width_m
+            else:
+                x_start, x_end = x0_m + width_m, x0_m
+            pts.append((x_start, y_m))
+            pts.append((x_end,   y_m))
+        else:
+            # scan along y (swap roles)
+            x_m = x0_m + step_val
+            if dir_sign > 0:
+                y_start, y_end = y0_m, y0_m + width_m
+            else:
+                y_start, y_end = y0_m + width_m, y0_m
+            pts.append((x_m, y_start))
+            pts.append((x_m, y_end))
+
+        dir_sign *= -1  # serpentine
+
+    # convert to ND
+    return np.column_stack([
+        [ _to_nd(px, len_scale) for px, _ in pts ],
+        [ _to_nd(py, len_scale) for _, py in pts ],
+    ])
+
+# ---------- 4) explicit waypoints ----------
+def build_waypoints_nd(*,
+    waypoints_m: list[tuple[float, float]],  # [(x_m, y_m), ...]
+    close_loop: bool = False,
+    len_scale: float
+) -> np.ndarray:
+    pts = list(waypoints_m)
+    if close_loop and len(pts) >= 2:
+        pts.append(pts[0])
+    return np.column_stack([
+        [ _to_nd(px, len_scale) for px, _ in pts ],
+        [ _to_nd(py, len_scale) for _, py in pts ],
+    ])
+
+
+
+
+# --------- 5) Build from picture  --------
+def extract_image_boundary(img_path: str,
+                           len_scale: float,
+                           horizontal_length: float,
+                           vertical_length: float | None = None):
+    """
+    Returns:
+      x_new_nd, y_new_nd (non-dimensional) and a matplotlib.path.Path for contains_point.
+    """
+    img = io.imread(img_path)
+
+    # If RGBA, drop alpha channel
+    if img.ndim == 3 and img.shape[2] == 4:
+        img = color.rgba2rgb(img)
+
+    # Grayscale
+    if img.ndim == 3:
+        gray_img = color.rgb2gray(img)
+    else:
+        gray_img = img.astype(np.float32)
+        # Normalize if necessary
+        if gray_img.max() > 1.0:
+            m = gray_img.max()
+            gray_img = gray_img / (m if m != 0 else 1.0)
+
+    # Binary by Otsu
+    thresh = filters.threshold_otsu(gray_img)
+    binary_img = gray_img > thresh
+
+    # Largest contour
+    contours = measure.find_contours(binary_img, level=0.5)
+    if not contours:
+        raise ValueError(f"No contour found in image: {img_path}")
+    longhorn_contour = max(contours, key=len)
+
+    # Flip y so origin behaves bottom-left
+    height = binary_img.shape[0]
+    boundary_coords = np.array(longhorn_contour, dtype=float)
+    boundary_coords[:, 0] = height - boundary_coords[:, 0]
+
+    # Spline smooth (periodic)
+    tck, _ = splprep([boundary_coords[:, 1], boundary_coords[:, 0]], s=0, per=True)
+    u_new = np.linspace(0.0, 1.0, 200)
+    x_new, y_new = splev(u_new, tck)     # arrays (in pixel-ish coordinates)
+
+    x_new = np.asarray(x_new, dtype=float)
+    y_new = np.asarray(y_new, dtype=float)
+
+    # Scale to non-dimensional lengths
+    # horizontal_length is in meters -> convert to ND
+    horizontal_length_nd = float(horizontal_length) / float(len_scale)
+    if vertical_length is None:
+        # keep aspect
+        rngx = (x_new.max() - x_new.min())
+        rngy = (y_new.max() - y_new.min())
+        aspect = (rngy / (rngx + 1e-15))
+        vertical_length_nd = aspect * horizontal_length_nd
+    else:
+        vertical_length_nd = float(vertical_length) / float(len_scale)
+
+    # Normalize to [0,1] then scale to ND box
+    x_new_nd = (x_new - x_new.min()) / (x_new.max() - x_new.min() + 1e-15) * horizontal_length_nd
+    y_new_nd = (y_new - y_new.min()) / (y_new.max() - y_new.min() + 1e-15) * vertical_length_nd
+
+    # Path for point-in-polygon test (expects NumPy)
+    boundary_path = Path(np.column_stack((x_new_nd, y_new_nd)))
+    return x_new_nd, y_new_nd, boundary_path
+
+
+def create_path(x_new_nd: np.ndarray,
+                y_new_nd: np.ndarray,
+                boundary_path: Path,
+                n: int = 100):
+    """
+    - Sweep n columns in x (min->max).
+    - For each column, sweep n samples in y (alternating direction).
+    - Keep only points 'inside' boundary_path.
+    Returns list of [x, y] (ND).
+    """
+    zigzag_trajectory = []
+    x_vals = np.linspace(np.min(x_new_nd), np.max(x_new_nd), num=n)
+
+    for i, x in enumerate(x_vals):
+        if i % 2 == 0:
+            # bottom -> top
+            y_traj = np.linspace(np.min(y_new_nd), np.max(y_new_nd), num=n)
+        else:
+            # top -> bottom
+            y_traj = np.linspace(np.max(y_new_nd), np.min(y_new_nd), num=n)
+
+        for y in y_traj:
+            if boundary_path.contains_point((x, y)):
+                zigzag_trajectory.append([x, y])
+
+    return zigzag_trajectory
+
+
+def build_picture_nd(*,
+                     img_path: str,
+                     horizontal_length_m: float,
+                     len_scale: float,
+                     vertical_length_m: float | None = None,
+                     n: int = 100) -> np.ndarray:
+    """
+    Produces ND waypoints anchored at (0,0).
+    - img_path: path to image file
+    - horizontal_length_m: desired width in meters
+    - vertical_length_m: optional height in meters (keeps aspect if None)
+    - len_scale: to convert meters -> ND
+    - n: sampling density
+    """
+    x_new_nd, y_new_nd, boundary_path = extract_image_boundary(
+        img_path=img_path,
+        len_scale=len_scale,
+        horizontal_length=horizontal_length_m,
+        vertical_length=vertical_length_m,
+    )
+
+    zigzag = create_path(x_new_nd, y_new_nd, boundary_path, n=n)
+    W = np.array(zigzag, dtype=float)
+
+    # Anchor to (0,0):
+    if W.shape[0] >= 1:
+        W[:, 0] -= W[0, 0]
+        W[:, 1] -= W[0, 1]
+
+    return W  # ND waypoints
