@@ -72,7 +72,6 @@ def grid_movement_index(coordx, coordy, velocity, nx, ny, nz, t_len=None):
     index_y_neg = xy_index_negative(coordy, velocity, t_len=t_len)
     index_x_neg = xy_index_negative(coordx, velocity, t_len=t_len)
 
-    # NOTE: This matches your original inclusive-end convention (x_ind1+1).
     slice_1d_in_y  = Index_3D_to_1D(0, coordx.shape[0], 0, index_y-1,     array1)
     slice_1d_out_y = Index_3D_to_1D(0, coordx.shape[0], index_y, coordy.shape[0], array1)
 
