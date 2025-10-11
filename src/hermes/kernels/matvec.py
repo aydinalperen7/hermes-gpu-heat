@@ -8,7 +8,7 @@ def mv_level3_dirichlet(
     hixsq, hiysq, hizsq,
     dt05,
     n2,
-    u0,                  # unused except at Dirichlet boundaries; kept for parity #REMOVE
+    u0,                  # unused
     hz
 ):
     """
