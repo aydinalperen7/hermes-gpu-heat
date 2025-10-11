@@ -18,7 +18,7 @@ class phys_parameter:
         rb = float(arg2)
         t_spot_on = float(arg3)
 
-        # --- material and environment defaults (same as your file) ---
+        # --- material and environment defaults  ---
         K = 13.5                    # W/(m K)
         rho = 7950                  # kg/m^3
         Cp = 470                    # J/(kg K)
