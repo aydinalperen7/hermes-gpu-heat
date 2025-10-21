@@ -127,12 +127,12 @@ project_root = Path(__file__).resolve().parents[3]
 
 # If user gave --config use it, otherwise default to configs/sim.ini
 if args.config is not None:
-    config_path = (project_root / args.config).resolve()
+    config_path = (project_root / "configs"  / args.config).resolve()
 else:
     config_path = project_root / "configs" / "sim.ini"
 
 if args.laser_path is not None:
-    path_info = (project_root / args.laser_path).resolve()
+    path_info = (project_root / "configs" / args.laser_path).resolve()
 else:
     path_info = project_root / "configs" / "path_laser.ini"
 
