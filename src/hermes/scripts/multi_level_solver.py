@@ -1116,7 +1116,7 @@ for layers in range(num_layers):
     
             
         ### Move Grid and update variables###
-        elif movement_x == 1 and iii and velocity: # means x-movement in + dir
+        if movement_x == 1 and iii and velocity: # means x-movement in + dir
         ### Move the Laser Source ###
             # x00 += velocity
         ### Move the Laser Source ###
