@@ -74,6 +74,21 @@ export LD_LIBRARY_PATH=/usr/lib64/:$LD_LIBRARY_PATH
 export PYTHONPATH="/work/09143/halperen/vista/hermes-gpu-heat/src:$PYTHONPATH"
 ```
 
+### Reproducible GH node setup (recommended)
+
+Use the pinned environment + wrapper scripts added for consistent behavior across GH nodes:
+
+```bash
+cd hermes-gpu-heat
+bash gh_node_scripts/create_env_gh.sh
+bash gh_node_scripts/run_solver_gh.sh sim_ex1.ini path_laser_ex1.ini
+```
+
+Direct run is also valid if you set the same module/environment variables manually:
+`python3 -u -X faulthandler src/hermes/scripts/multi_level_solver.py --config sim_ex1.ini --laser_path path_laser_ex1.ini`
+
+For details, see `GH_NODE_REPRO.md`.
+
 
 ##  Laser Path Preview
 
@@ -119,6 +134,11 @@ python3 multi_level_solver.py
 -  Custom config:
 ```bash
 python3 multi_level_solver.py --config /path/to/other_sim.ini --laser_path /path/to/other_laser.ini
+```
+
+- Reproducible GH wrapper (from repo root):
+```bash
+bash gh_node_scripts/run_solver_gh.sh sim_ex1.ini path_laser_ex1.ini
 ```
 
 

@@ -1,0 +1,14 @@
+name: hermes_clean
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy=2.2.6
+  - scipy=1.13.1
+  - numba=0.63.1
+  - cupy
+  - matplotlib
+  - scikit-image
+  - pyyaml
+  - psutil
