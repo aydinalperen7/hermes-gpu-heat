@@ -42,37 +42,8 @@ If you are using the codes in this repository, please cite the following paper
 ## Installation
 ### On TACC Vista (Grace Hopper GPUs)
 
-One-time environment setup:
-```bash
-module purge
-module load cuda/12
-module load gcc/12.2
-
-# install miniconda if not already installed, then:
-conda create -n test_env python==3.11
-conda activate test_env
-
-python -m pip install --upgrade pip
-pip install "cython<3"
-pip install psutil pyyaml scipy
-pip install cupy-cuda12x numba
-```
-Then set:
-```bash
-conda activate test_env
-ml cuda
-ml gcc
-
-# CUDA paths (Vista-specific)
-export CUDA_HOME=/home1/apps/nvidia/Linux_aarch64/24.7/math_libs/12.5/targets/sbsa-linux
-export LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
-export NUMBA_CUDA_DRIVER=/usr/lib64/libcuda.so
-export CUDA_HOME=$TACC_CUDA_DIR
-export LD_LIBRARY_PATH=/usr/lib64/:$LD_LIBRARY_PATH
-
-# Add repo to Python path
-export PYTHONPATH="/work/09143/halperen/vista/hermes-gpu-heat/src:$PYTHONPATH"
-```
+Use the reproducible GH-node setup in `GH_NODE_REPRO.md`.
+The old manual module/environment block was removed because it becomes stale across node/software updates.
 
 ### Reproducible GH node setup (recommended)
 
@@ -135,6 +106,17 @@ python3 multi_level_solver.py
 ```bash
 python3 multi_level_solver.py --config /path/to/other_sim.ini --laser_path /path/to/other_laser.ini
 ```
+
+- Optional Jacobi preconditioner toggles (default is `none` for both):
+```bash
+# Jacobi on level 2 and level 3
+python3 multi_level_solver.py \
+  --config /path/to/other_sim.ini \
+  --laser_path /path/to/other_laser.ini \
+  --precond-level2 jacobi \
+  --precond-level3 jacobi
+```
+
 
 - Reproducible GH wrapper (from repo root):
 ```bash
