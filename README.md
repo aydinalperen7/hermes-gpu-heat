@@ -85,7 +85,7 @@ bash gh_node_scripts/run_solver_gh.sh sim_ex1.ini path_laser_ex1.ini
 ```
 
 Direct run is also valid if you set the same module/environment variables manually:
-`python3 -u -X faulthandler src/hermes/scripts/multi_level_solver.py --config sim_ex1.ini --laser_path path_laser_ex1.ini`
+`python3 src/hermes/scripts/multi_level_solver.py --config sim_ex1.ini --laser_path path_laser_ex1.ini`
 
 For details, see `GH_NODE_REPRO.md`.
 
