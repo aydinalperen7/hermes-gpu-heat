@@ -9,6 +9,25 @@ cd "$REPO_ROOT"
 ENV_NAME="${ENV_NAME:-hermes_clean}"
 CONFIG_PATH="${1:-sim_ex1.ini}"
 LASER_PATH="${2:-path_laser_ex1.ini}"
+PRECOND_LEVEL2="${PRECOND_LEVEL2:-${3:-none}}"
+PRECOND_LEVEL3="${PRECOND_LEVEL3:-${4:-none}}"
+EXTRA_ARGS=("${@:5}")
+
+case "$PRECOND_LEVEL2" in
+  none|jacobi) ;;
+  *)
+    echo "Invalid preconditioner for level2: $PRECOND_LEVEL2 (expected: none|jacobi)" >&2
+    exit 2
+    ;;
+esac
+
+case "$PRECOND_LEVEL3" in
+  none|jacobi) ;;
+  *)
+    echo "Invalid preconditioner for level3: $PRECOND_LEVEL3 (expected: none|jacobi)" >&2
+    exit 2
+    ;;
+esac
 
 # Initialize conda without relying on interactive shell dotfiles.
 if ! command -v conda >/dev/null 2>&1; then
@@ -33,4 +52,7 @@ export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$CUDA_HOME/nvvm/lib64:/home1/apps/nvidi
 
 python -u -X faulthandler src/hermes/scripts/multi_level_solver.py \
   --config "$CONFIG_PATH" \
-  --laser_path "$LASER_PATH"
+  --laser_path "$LASER_PATH" \
+  --precond-level2 "$PRECOND_LEVEL2" \
+  --precond-level3 "$PRECOND_LEVEL3" \
+  "${EXTRA_ARGS[@]}"
