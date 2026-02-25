@@ -36,7 +36,7 @@ export CUDA_HOME="${TACC_CUDA_DIR:-/home1/apps/nvidia/Linux_aarch64/24.7/cuda/12
 export NUMBA_CUDA_DRIVER=/usr/lib64/libcuda.so
 export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$CUDA_HOME/nvvm/lib64:/home1/apps/nvidia/Linux_aarch64/24.7/math_libs/12.5/targets/sbsa-linux/lib:/usr/lib64:${LD_LIBRARY_PATH:-}"
-python3 -u -X faulthandler src/hermes/scripts/multi_level_solver.py --config sim_ex1.ini --laser_path path_laser_ex1.ini
+python3 src/hermes/scripts/multi_level_solver.py --config sim_ex1.ini --laser_path path_laser_ex1.ini
 ```
 
 `gh_node_scripts/run_solver_gh.sh` automatically sets:
