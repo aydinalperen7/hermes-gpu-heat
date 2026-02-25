@@ -121,6 +121,7 @@ python3 multi_level_solver.py \
 - Reproducible GH wrapper (from repo root):
 ```bash
 bash gh_node_scripts/run_solver_gh.sh sim_ex1.ini path_laser_ex1.ini jacobi none
+```
 
 Notes:
 - Wrapper args are: `run_solver_gh.sh <config> <laser_path> [precond_level2] [precond_level3]`
@@ -132,6 +133,7 @@ After the simulation, HERMES writes outputs under:
 ```bash
 <dir>/<tag>/snapshots/
 ```
+
 in either `.npy`; (multiple files per step) or `.npz` (compressed single file per step) format.
 
 A dedicated post-processing script converts these into VTK files for visualization.
