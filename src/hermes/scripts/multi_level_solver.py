@@ -31,13 +31,14 @@ from hermes.kernels.rhs import rhs_level12_neumann
 from hermes.kernels.matvec import mv_level3_dirichlet, mv_level12_neumann
 from hermes.kernels.bc import extract_neumann_bc_r_l_i_o, extract_neumann_bc_b
 from hermes.kernels.interp import  trilinear_interpolation
+from hermes.kernels.precond import build_diag_level3_dirichlet, build_diag_level12_neumann
 from hermes.runtime.state import GridState
 from hermes.runtime.config import load_config
 from hermes.post.snapshot import save_arrays_npz
 from hermes.post.gr_metrics import compute_G_and_R_gpu
 from hermes.laser_path.path_loader import build_waypoints_nd_from_ini
-from hermes.laser_path.trajectory import TrajectoryStepper
-
+from hermes.laser_path.trajectory_numpy import TrajectoryStepper
+import time
 
 
 
@@ -65,6 +66,12 @@ def mv_wrapper_s(v):
 def mv_wrapper_s_level2(v):
     mv_level12_neumann[blocks_per_grid_s_level2,threads_per_block_s_level2]( nx_s_level2, ny_s_level2, nz_s_level2, v, d_result_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, dt_lin05, n2, iSte, u_s_level2, h_z_new_level2)
     return result_s_level2
+
+def m_wrapper_lin(v):
+    return d_inv_diag_lin * v
+
+def m_wrapper_s_level2(v):
+    return d_inv_diag_s_level2 * v
 
 
 def sparse_cg(A, b, u0, TOL, P, maxit):
@@ -117,8 +124,22 @@ else:
 parser = argparse.ArgumentParser(description="HERMES multi-level solver")
 parser.add_argument("--config", type=str, default=None, help="Path to sim.ini file")
 parser.add_argument("--laser_path", type=str, default=None, help="Path to laser_path.ini file")
+parser.add_argument(
+    "--precond-level2",
+    choices=("none", "jacobi"),
+    default="none",
+    help="Preconditioner for level 2 solve (default: none)",
+)
+parser.add_argument(
+    "--precond-level3",
+    choices=("none", "jacobi"),
+    default="none",
+    help="Preconditioner for level 3 solve (default: none)",
+)
 
 args = parser.parse_args()
+use_precond_level2 = args.precond_level2 == "jacobi"
+use_precond_level3 = args.precond_level3 == "jacobi"
 
 
 
@@ -674,6 +695,36 @@ Alinear_s = cspla.LinearOperator((nx_s*ny_s*nz_s, nx_s*ny_s*nz_s), matvec=mv_wra
 Alinear_s_level2  = cspla.LinearOperator((nx_s_level2 *ny_s_level2 *nz_s_level2 , nx_s_level2 *ny_s_level2 *nz_s_level2 ), matvec=mv_wrapper_s_level2 )
 # ----------  Matvecs for Level 3, 1 and 2 ----------
 
+# ---------- For CG preconditioner ----------
+diag_lin = cp.empty_like(u_lin, dtype=float_type)
+diag_s_level2 = cp.empty_like(u_s_level2, dtype=float_type)
+d_inv_diag_lin = cp.empty_like(u_lin, dtype=float_type)
+d_inv_diag_s_level2 = cp.empty_like(u_s_level2, dtype=float_type)
+
+if use_precond_level3:
+    build_diag_level3_dirichlet[blocks_per_grid_lin, threads_per_block_lin](
+        nx_lin, ny_lin, nz_lin,
+        h_linisq, h_linisq, h_linisq,
+        dt_lin05, n2, h_lin,
+        diag_lin
+    )
+    d_inv_diag_lin[:] = 1.0 / diag_lin
+    Mlinear_lin = cspla.LinearOperator(
+        (nx_lin * ny_lin * nz_lin, nx_lin * ny_lin * nz_lin),
+        matvec=m_wrapper_lin
+    )
+else:
+    Mlinear_lin = None
+
+if use_precond_level2:
+    Mlinear_s_level2 = cspla.LinearOperator(
+        (nx_s_level2 * ny_s_level2 * nz_s_level2, nx_s_level2 * ny_s_level2 * nz_s_level2),
+        matvec=m_wrapper_s_level2
+    )
+else:
+    Mlinear_s_level2 = None
+# ---------- For CG preconditioner ----------
+
 
 
 # ---------- Variables for fixed-point it ----------
@@ -777,6 +828,8 @@ initial_move_x = movement_x
 
 print('movement_y = ', movement_y)
 print('movement_x= ', movement_x)
+print("precond_level2 =", args.precond_level2, "| precond_level3 =", args.precond_level3)
+
 
 
 
@@ -959,8 +1012,9 @@ for layers in range(num_layers):
 
 
 
-
+    loop_t0 = None
     for iii in step_iterator():
+
     
         ttt += dt_lin*phys.time_scale*1e3
         if velocity != velocity0:
@@ -1194,7 +1248,7 @@ for layers in range(num_layers):
     
         ### Solve the 3rd Level ###
         rhs_level3_dirichlet[blocks_per_grid_lin, threads_per_block_lin](nx_lin, ny_lin, nz_lin,u_lin, qs_lin, b_lin, h_linisq, h_linisq, h_linisq, n2, n3, dt_lin05, u0, h_lin)    
-        u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, cg_tol_level1, None, maxit=cg_max_iter_level1)
+        u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, cg_tol_level1, Mlinear_lin, maxit=cg_max_iter_level1)
         u_lin[:] = u_new_lin.copy()
         ### Solve the 3rd Level ###
         
@@ -1206,8 +1260,15 @@ for layers in range(num_layers):
         ### Exract BC from curren time step for Level 2 ###
      
         ### Solve the 2nd Level ###
-        rhs_level12_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2](nx_s_level2, ny_s_level2, nz_s_level2, u_s_level2_old,  qs_s_level2, b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, p_o_level2, p_i_level2, p_r_level2, p_l_level2, p_b_level2, p_o_old_level2, p_i_old_level2, p_r_old_level2, p_l_old_level2, p_b_old_level2, u_s_level2, h_z_new_level2, n4, n5, n6)
-        u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, cg_tol_level2, None, maxit=cg_max_iter_level2)
+        rhs_level12_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2]( nx_s_level2, ny_s_level2, nz_s_level2, d_u_s_level2_old,  d_qs_s_level2, d_b_s_level2, h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2, iSte, n2, n3, dt_lin05, d_p_o_level2, d_p_i_level2, d_p_r_level2, d_p_l_level2, d_p_b_level2, d_p_o_old_level2, d_p_i_old_level2, d_p_r_old_level2, d_p_l_old_level2, d_p_b_old_level2, d_u_s_level2, h_z_new_level2, n4, n5, n6)
+        if use_precond_level2:
+            build_diag_level12_neumann[blocks_per_grid_s_level2, threads_per_block_s_level2](
+                nx_s_level2, ny_s_level2, nz_s_level2,
+                h_ix_newsq_level2, h_iy_newsq_level2, h_iz_newsq_level2,
+                dt_lin05, n2, iSte, h_z_new_level2, u_s_level2, diag_s_level2
+            )
+            d_inv_diag_s_level2[:] = 1.0 / diag_s_level2
+        u_new_s_level2,stat,num_iter = sparse_cg(Alinear_s_level2, b_s_level2, u_s_level2, cg_tol_level2, Mlinear_s_level2, maxit=cg_max_iter_level2)
         ### Solve the 2nd Level ###
     
     
@@ -1237,6 +1298,9 @@ for layers in range(num_layers):
             if nl_lv1 != nl_lv1-1:
                 u_s[:] = (1-w_lv1)*u_s + w_lv1*u_new_s
             u_s[:] = u_new_s.copy()
+
+        
+
     
         
         if should_save_step( iii2, layers+1, iii):
