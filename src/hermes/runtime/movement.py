@@ -97,15 +97,19 @@ def precompute_for_update(
     u, nx, ny, nz,
     y, y_index,
     x, x_index,
-    slice_1d_in, slice_1d_out,
+    slice_1d_iny, slice_1d_outy,
+    slice_1d_inx, slice_1d_outx,
     z,
     *,
     float_type
 ) -> Dict[str, Any]:
 
     
-    u_in  = cp.zeros_like(u[slice_1d_in], dtype=float_type)
-    u_out = cp.zeros_like(u[slice_1d_out], dtype=float_type)
+    u_iny  = cp.zeros_like(u[slice_1d_iny], dtype=float_type)
+    u_outy = cp.zeros_like(u[slice_1d_outy], dtype=float_type)
+
+    u_inx  = cp.zeros_like(u[slice_1d_inx], dtype=float_type)
+    u_outx = cp.zeros_like(u[slice_1d_outx], dtype=float_type)
 
     ny_in  = int(y[0:y_index].shape[0])
     ny_out = int(y[y_index:].shape[0])
@@ -128,7 +132,8 @@ def precompute_for_update(
     blocks_out_x = (nx_out * ny * nz + (tpbout_x-1)) // tpbout_x
 
     return dict(
-        u_in=u_in, u_out=u_out,
+        u_inx=u_inx, u_outx=u_outx,
+        u_iny=u_iny, u_outy=u_outy,
         ny_in=ny_in, ny_out=ny_out, nx_in=nx_in, nx_out=nx_out,
         xoldmin=xoldmin, yoldmin=yoldmin, zoldmin=zoldmin,
         blocks_in_y=blocks_in_y, blocks_out_y=blocks_out_y,
@@ -305,4 +310,3 @@ def update_after_movement_level3x_2_negative(x, y, z, val, nx_old, ny_old, nz_ol
 
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = u0
-

@@ -20,7 +20,8 @@ class PrecomputeState:
     slice_1d_in_liny=None; slice_1d_out_liny=None; slice_1d_in_linx=None; slice_1d_out_linx=None
     slice_1d_in_linx_negative=None; slice_1d_out_linx_negative=None
     slice_1d_in_liny_negative=None; slice_1d_out_liny_negative=None
-    uin_lin=None; uout_lin=None; ny_lin_in=None; ny_lin_out=None; nx_lin_in=None; nx_lin_out=None
+    u_in_lin_y=None; u_out_lin_y=None; u_in_lin_x=None; u_out_lin_x=None
+    ny_lin_in=None; ny_lin_out=None; nx_lin_in=None; nx_lin_out=None
     xoldmin_lin=None; yoldmin_lin=None; zoldmin_lin=None
     blocks_per_grid_in_lin_y=None; blocks_per_grid_out_lin_y=None
     blocks_per_grid_in_lin_x=None; blocks_per_grid_out_lin_x=None
@@ -32,7 +33,8 @@ class PrecomputeState:
     slice_1d_in_level2y=None; slice_1d_out_level2y=None; slice_1d_in_level2x=None; slice_1d_out_level2x=None
     slice_1d_in_level2x_negative=None; slice_1d_out_level2x_negative=None
     slice_1d_in_level2y_negative=None; slice_1d_out_level2y_negative=None
-    uin_s_level2=None; uout_s_level2=None; ny_s_in_level2=None; ny_s_out_level2=None
+    u_in_s_level2_y=None; u_out_s_level2_y=None; u_in_s_level2_x=None; u_out_s_level2_x=None
+    ny_s_in_level2=None; ny_s_out_level2=None
     nx_s_in_level2=None; nx_s_out_level2=None
     xoldmin_s_level2=None; yoldmin_s_level2=None; zoldmin_s_level2=None
     blocks_per_grid_in_s_level2_y=None; blocks_per_grid_out_s_level2_y=None
@@ -45,7 +47,8 @@ class PrecomputeState:
     slice_1d_iny=None; slice_1d_outy=None; slice_1d_inx=None; slice_1d_outx=None
     slice_1d_inx_negative=None; slice_1d_outx_negative=None
     slice_1d_iny_negative=None; slice_1d_outy_negative=None
-    uin_s=None; uout_s=None; ny_s_in=None; ny_s_out=None; nx_s_in=None; nx_s_out=None
+    u_in_s_y=None; u_out_s_y=None; u_in_s_x=None; u_out_s_x=None
+    ny_s_in=None; ny_s_out=None; nx_s_in=None; nx_s_out=None
     xoldmin_s=None; yoldmin_s=None; zoldmin_s=None
     blocks_per_grid_in_s_y=None; blocks_per_grid_out_s_y=None
     blocks_per_grid_in_s_x=None; blocks_per_grid_out_s_x=None
@@ -102,8 +105,10 @@ class GridUpdater:
                                              self.l1.y, self.state.index_y,
                                              self.l1.x, self.state.index_x,
                                              self.state.slice_1d_iny, self.state.slice_1d_outy,
+                                             self.state.slice_1d_inx, self.state.slice_1d_outx,
                                              self.l1.z, float_type=self.float_type)
-        self.state.uin_s  = pre_s["u_in"];      self.state.uout_s = pre_s["u_out"]
+        self.state.u_in_s_y = pre_s["u_iny"];      self.state.u_out_s_y = pre_s["u_outy"]
+        self.state.u_in_s_x = pre_s["u_inx"];      self.state.u_out_s_x = pre_s["u_outx"]
         self.state.ny_s_in = pre_s["ny_in"];    self.state.ny_s_out = pre_s["ny_out"]
         self.state.nx_s_in = pre_s["nx_in"];    self.state.nx_s_out = pre_s["nx_out"]
         self.state.xoldmin_s = pre_s["xoldmin"]; self.state.yoldmin_s = pre_s["yoldmin"]; self.state.zoldmin_s = pre_s["zoldmin"]
@@ -117,8 +122,10 @@ class GridUpdater:
                                             self.l2.y, self.state.index_y_level2,
                                             self.l2.x, self.state.index_x_level2,
                                             self.state.slice_1d_in_level2y, self.state.slice_1d_out_level2y,
+                                            self.state.slice_1d_in_level2x, self.state.slice_1d_out_level2x,
                                             self.l2.z, float_type=self.float_type)
-        self.state.uin_s_level2  = pre2["u_in"];      self.state.uout_s_level2 = pre2["u_out"]
+        self.state.u_in_s_level2_y = pre2["u_iny"];      self.state.u_out_s_level2_y = pre2["u_outy"]
+        self.state.u_in_s_level2_x = pre2["u_inx"];      self.state.u_out_s_level2_x = pre2["u_outx"]
         self.state.ny_s_in_level2 = pre2["ny_in"];    self.state.ny_s_out_level2 = pre2["ny_out"]
         self.state.nx_s_in_level2 = pre2["nx_in"];    self.state.nx_s_out_level2 = pre2["nx_out"]
         self.state.xoldmin_s_level2 = pre2["xoldmin"]; self.state.yoldmin_s_level2 = pre2["yoldmin"]; self.state.zoldmin_s_level2 = pre2["zoldmin"]
@@ -132,8 +139,10 @@ class GridUpdater:
                                             self.lin.y, self.state.index_y_lin,
                                             self.lin.x, self.state.index_x_lin,
                                             self.state.slice_1d_in_liny, self.state.slice_1d_out_liny,
+                                            self.state.slice_1d_in_linx, self.state.slice_1d_out_linx,
                                             self.lin.z, float_type=self.float_type)
-        self.state.uin_lin = plin["u_in"];        self.state.uout_lin = plin["u_out"]
+        self.state.u_in_lin_y = plin["u_iny"];        self.state.u_out_lin_y = plin["u_outy"]
+        self.state.u_in_lin_x = plin["u_inx"];        self.state.u_out_lin_x = plin["u_outx"]
         self.state.ny_lin_in = plin["ny_in"];     self.state.ny_lin_out = plin["ny_out"]
         self.state.nx_lin_in = plin["nx_in"];     self.state.nx_lin_out = plin["nx_out"]
         self.state.xoldmin_lin = plin["xoldmin"]; self.state.yoldmin_lin = plin["yoldmin"]; self.state.zoldmin_lin = plin["zoldmin"]
@@ -144,7 +153,6 @@ class GridUpdater:
 
         return self.state
 
-    #  keep old variable names temporarily
     def as_globals(self):
         s = self.state
         return {name: getattr(s, name) for name in vars(s) if not name.startswith('_')}
