@@ -4,6 +4,18 @@
 from __future__ import annotations
 import cupy as cp
 
+"""
+Legacy 8-direction trajectory stepper.
+
+This implementation constrains motion to axis-aligned or diagonal grid steps
+using fixed per-axis increments. It is kept for reference and reproducibility
+of older solver behavior.
+
+For current trajectory handling, use:
+- `hermes.laser_path.trajectory_numpy`
+- `hermes.laser_path.trajectory_cupy`
+"""
+
 class TrajectoryStepper:
     """
     Axis-wise stepping:
