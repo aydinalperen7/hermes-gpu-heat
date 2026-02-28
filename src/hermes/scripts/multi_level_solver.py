@@ -37,7 +37,7 @@ from hermes.runtime.config import load_config
 from hermes.post.snapshot import save_arrays_npz
 from hermes.post.gr_metrics import compute_G_and_R_gpu
 from hermes.laser_path.path_loader import build_waypoints_nd_from_ini
-from hermes.laser_path.trajectory_numpy import TrajectoryStepper
+from hermes.laser_path.trajectory_cupy import TrajectoryStepper
 import time
 
 
@@ -275,8 +275,8 @@ ttt = 0 # Starting time
 
 # ---------- Create the Path ----------
 #NonDimensional (ND)
-x00_initial = float_type(x00_initial_m / phys.time_scale)
-y00_initial = float_type(y00_initial_m / phys.time_scale)
+x00_initial = float_type(x00_initial_m / phys.len_scale)
+y00_initial = float_type(y00_initial_m / phys.len_scale)
 velocity = float_type(v / ( (phys.len_scale / phys.time_scale) / dt_lin)) 
 velocity0 = velocity
 
@@ -569,12 +569,15 @@ pre_s = precompute_for_update(
     y_s, index_y,
     x_s, index_x,
     slice_1d_iny, slice_1d_outy,
+    slice_1d_inx, slice_1d_outx,
     z_s,
     float_type=float_type,
 )
 
-uin_s                   = pre_s["u_in"]
-uout_s                  = pre_s["u_out"]
+u_in_s_y                = pre_s["u_iny"]
+u_out_s_y               = pre_s["u_outy"]
+u_in_s_x                = pre_s["u_inx"]
+u_out_s_x               = pre_s["u_outx"]
 ny_s_in                 = pre_s["ny_in"]
 ny_s_out                = pre_s["ny_out"]
 nx_s_in                 = pre_s["nx_in"]
@@ -597,12 +600,15 @@ pre_s_level2 = precompute_for_update(
     y_s_level2, index_y_level2,
     x_s_level2, index_x_level2,
     slice_1d_in_level2y, slice_1d_out_level2y,
+    slice_1d_in_level2x, slice_1d_out_level2x,
     z_s_level2,
     float_type=float_type,
 )
 
-uin_s_level2                   = pre_s_level2["u_in"]
-uout_s_level2                  = pre_s_level2["u_out"]
+u_in_s_level2_y                = pre_s_level2["u_iny"]
+u_out_s_level2_y               = pre_s_level2["u_outy"]
+u_in_s_level2_x                = pre_s_level2["u_inx"]
+u_out_s_level2_x               = pre_s_level2["u_outx"]
 ny_s_in_level2                 = pre_s_level2["ny_in"]
 ny_s_out_level2                = pre_s_level2["ny_out"]
 nx_s_in_level2                 = pre_s_level2["nx_in"]
@@ -625,12 +631,15 @@ pre_lin = precompute_for_update(
     y_lin, index_y_lin,
     x_lin, index_x_lin,
     slice_1d_in_liny, slice_1d_out_liny,
+    slice_1d_in_linx, slice_1d_out_linx,
     z_lin,
     float_type=float_type,
 )
 
-uin_lin                   = pre_lin["u_in"]
-uout_lin                  = pre_lin["u_out"]
+u_in_lin_y               = pre_lin["u_iny"]
+u_out_lin_y              = pre_lin["u_outy"]
+u_in_lin_x               = pre_lin["u_inx"]
+u_out_lin_x              = pre_lin["u_outx"]
 ny_lin_in                 = pre_lin["ny_in"]
 ny_lin_out                = pre_lin["ny_out"]
 nx_lin_in                 = pre_lin["nx_in"]
@@ -780,7 +789,8 @@ d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old = map(
 # interpolation buffers
 d_uinte, d_uinteold = map(cuda.to_device, (uinte, uinteold))
 # in/out buffers for movement
-d_uin_s, d_uout_s = map(cuda.to_device, (uin_s, uout_s))
+d_uout_s_y = cuda.to_device(u_out_s_y)
+d_uout_s_x = cuda.to_device(u_out_s_x)
 
 # --- level 2 ---
 d_u_s_level2, = (cuda.to_device(u_s_level2),)
@@ -802,7 +812,8 @@ d_p_o_old_level2, d_p_i_old_level2, d_p_r_old_level2, d_p_l_old_level2, d_p_b_ol
 # level 2 interpolation
 d_uinte_level2, d_uinteold_level2 = map(cuda.to_device, (uinte_level2, uinteold_level2))
 # level 2 in/out movement buffers
-d_uin_s_level2, d_uout_s_level2 = map(cuda.to_device, (uin_s_level2, uout_s_level2))
+d_uout_s_level2_y = cuda.to_device(u_out_s_level2_y)
+d_uout_s_level2_x = cuda.to_device(u_out_s_level2_x)
 # ---------- CREATE CUDA ARRAYS ----------
 
 
@@ -823,6 +834,44 @@ lin    = LevelRefs(u_lin, x_lin, y_lin, z_lin, nx_lin, ny_lin, nz_lin, x_lin0, y
 kernels = Kernels(grid_movement_index, precompute_for_update)
 pre = GridUpdater(level1, level2, lin, kernels, float_type=float_type, t_len=target_step)
 
+# Cache precompute states keyed by actual step magnitude to make switch between distinct |vx| / |vy| easier
+pre_state_cache = {}
+_DYNAMIC_MOVEMENT_STATE_NAMES = (
+    "xoldmin_s", "yoldmin_s", "zoldmin_s",
+    "xoldmin_s_level2", "yoldmin_s_level2", "zoldmin_s_level2",
+    "xoldmin_lin", "yoldmin_lin", "zoldmin_lin",
+    "xminn", "yminn", "zminn",
+    "xmin_level2", "ymin_level2", "zmin_level2",
+)
+
+def load_precompute_state(step_mag):
+    if step_mag <= 0:
+        return
+    key = round(float(step_mag), 15)
+    cached = pre_state_cache.get(key)
+    if cached is None:
+        pre.update(step_mag)
+        cached = dict(pre.as_globals())
+        pre_state_cache[key] = cached
+    dynamic_state = {}
+    g = globals()
+    for name in _DYNAMIC_MOVEMENT_STATE_NAMES:
+        if name in g:
+            dynamic_state[name] = g[name]
+    globals().update(cached)
+    if dynamic_state:
+        globals().update(dynamic_state)
+
+def refresh_precompute_output_buffers():
+    global d_uout_s_y, d_uout_s_level2_y, d_uout_s_x, d_uout_s_level2_x
+    d_uout_s_y = cuda.to_device(u_out_s_y)
+    d_uout_s_level2_y = cuda.to_device(u_out_s_level2_y)
+    d_uout_s_x = cuda.to_device(u_out_s_x)
+    d_uout_s_level2_x = cuda.to_device(u_out_s_level2_x)
+
+load_precompute_state(float(velocity))
+refresh_precompute_output_buffers()
+
 initial_move_y = movement_y
 initial_move_x = movement_x
 
@@ -842,6 +891,8 @@ for layers in range(num_layers):
     cntrr = 0
     movement_x = initial_move_x
     movement_y = initial_move_y
+    velocity_x_step = float_type(0.0)
+    velocity_y_step = float_type(0.0)
     y00 = y00_initial
     x00 = x00_initial
     
@@ -871,11 +922,17 @@ for layers in range(num_layers):
         xminn = float_type(x_lin[0].get()); yminn = float_type(y_lin[0].get()); zminn = float_type(z_lin[0].get())
         xmin_level2 = float_type(x_s_level2[0].get()); ymin_level2 = float_type(y_s_level2[0].get()); zmin_level2 = float_type(z_s_level2[0].get())
 
-        uin_s = cp.zeros_like(u_s[slice_1d_iny], dtype = float_type)
-        uin_s_level2 =  cp.zeros_like(u_s_level2[slice_1d_in_level2y], dtype = float_type)
-        uout_s = cp.zeros_like(u_s[slice_1d_outy], dtype = float_type)
-        uout_s_level2 = cp.zeros_like(u_s_level2[slice_1d_out_level2y], dtype = float_type)
-        uin_lin =  cp.zeros_like(u_lin[slice_1d_in_liny], dtype = float_type)
+        u_in_s_y = cp.zeros_like(u_s[slice_1d_iny], dtype = float_type)
+        u_in_s_level2_y =  cp.zeros_like(u_s_level2[slice_1d_in_level2y], dtype = float_type)
+        u_out_s_y = cp.zeros_like(u_s[slice_1d_outy], dtype = float_type)
+        u_out_s_level2_y = cp.zeros_like(u_s_level2[slice_1d_out_level2y], dtype = float_type)
+        u_in_lin_y =  cp.zeros_like(u_lin[slice_1d_in_liny], dtype = float_type)
+        u_in_s_x = cp.zeros_like(u_s[slice_1d_inx], dtype = float_type)
+        u_out_s_x = cp.zeros_like(u_s[slice_1d_outx], dtype = float_type)
+        u_in_s_level2_x = cp.zeros_like(u_s_level2[slice_1d_in_level2x], dtype = float_type)
+        u_out_s_level2_x = cp.zeros_like(u_s_level2[slice_1d_out_level2x], dtype = float_type)
+        u_in_lin_x = cp.zeros_like(u_lin[slice_1d_in_linx], dtype = float_type)
+        u_out_lin_x = cp.zeros_like(u_lin[slice_1d_out_linx], dtype = float_type)
 
         ny_lin_in = int(y_lin[0:index_y_lin].shape[0])
         ny_s_in  = int(y_s[0:index_y].shape[0])
@@ -994,11 +1051,10 @@ for layers in range(num_layers):
         d_y_s2_level2 = cuda.to_device(y_s2_level2)
         d_z_s2_level2 = cuda.to_device(z_s2_level2)
 
-        d_uout_s = cuda.to_device(uout_s)
-        d_uout_s_level2 = cuda.to_device(uout_s_level2)
-
-        d_uin_s = cuda.to_device(uin_s)
-        d_uin_s_level2 = cuda.to_device(uin_s_level2)
+        d_uout_s_y = cuda.to_device(u_out_s_y)
+        d_uout_s_level2_y = cuda.to_device(u_out_s_level2_y)
+        d_uout_s_x = cuda.to_device(u_out_s_x)
+        d_uout_s_level2_x = cuda.to_device(u_out_s_level2_x)
 
         d_u_s_level2_old = cuda.to_device(u_s_level2_old)
         d_u_s_old = cuda.to_device(u_s_old)
@@ -1020,8 +1076,9 @@ for layers in range(num_layers):
         if velocity != velocity0:
 
             velocity0 = velocity
-            pre.update(velocity)           
-            globals().update(pre.as_globals())
+            pre_state_cache.clear()
+            load_precompute_state(float(velocity))
+            refresh_precompute_output_buffers()
             print('velocity updated at iii = ', iii)
             # print(index_y, 'is index_y')
             
@@ -1085,11 +1142,10 @@ for layers in range(num_layers):
             d_y_s2_level2 = cuda.to_device(y_s2_level2)
             d_z_s2_level2 = cuda.to_device(z_s2_level2)
     
-            d_uout_s = cuda.to_device(uout_s)
-            d_uout_s_level2 = cuda.to_device(uout_s_level2)
-    
-            d_uin_s = cuda.to_device(uin_s)
-            d_uin_s_level2 = cuda.to_device(uin_s_level2)
+            d_uout_s_y = cuda.to_device(u_out_s_y)
+            d_uout_s_level2_y = cuda.to_device(u_out_s_level2_y)
+            d_uout_s_x = cuda.to_device(u_out_s_x)
+            d_uout_s_level2_x = cuda.to_device(u_out_s_level2_x)
     
             d_u_s_level2_old = cuda.to_device(u_s_level2_old)
             d_u_s_old = cuda.to_device(u_s_old)
@@ -1105,18 +1161,21 @@ for layers in range(num_layers):
         if iii % 1000 == 0:
             print('iii = ', iii)
             print('y00 = ', y00*phys.len_scale)
-        if movement_y==1 and iii and velocity : # means y-movement in + dir
+        if movement_y==1 and iii and velocity_y_step : # means y-movement in + dir
         ### Move the Laser Source ###
             # y00 += velocity
         ### Move the Laser Source ###
         
         ### Move Grid and update variables  ###
     
-            state.move_y(velocity, iii)
+            y_step_mag = abs(float(velocity_y_step))
+            load_precompute_state(y_step_mag)
+            refresh_precompute_output_buffers()
+            state.move_y(velocity_y_step, iii)
             
-            update_after_movementy2(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_iny, slice_1d_out=slice_1d_outy, index_y=index_y, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)
-            update_after_movementy2(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y, slice_1d_out=slice_1d_out_level2y, index_y=index_y_level2, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)
-            update_after_movement_level3y_2(x=d_x_lin, y=y_lin, z=d_z_lin, val=u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin, hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_liny, slice_1d_out=slice_1d_out_liny, index_y=index_y_lin, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)
+            update_after_movementy2(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=u_in_s_y, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s_y, one=1, val3=u_s, slice_1d_in=slice_1d_iny, slice_1d_out=slice_1d_outy, index_y=index_y, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)
+            update_after_movementy2(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=u_in_s_level2_y, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2_y, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y, slice_1d_out=slice_1d_out_level2y, index_y=index_y_level2, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)
+            update_after_movement_level3y_2(x=d_x_lin, y=y_lin, z=d_z_lin, val=u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin, hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=u_in_lin_y,  slice_1d_in=slice_1d_in_liny, slice_1d_out=slice_1d_out_liny, index_y=index_y_lin, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)
             
             ### Updated Laser Source ###
             qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
@@ -1126,29 +1185,32 @@ for layers in range(num_layers):
             
 
             ### New old mins for update ###
-            yoldmin_s += velocity
-            yoldmin_lin += velocity
-            yoldmin_s_level2 += velocity
+            yoldmin_s += velocity_y_step
+            yoldmin_lin += velocity_y_step
+            yoldmin_s_level2 += velocity_y_step
             ### New old mins for update ###
             
             ### New min coords for interpolation ###
-            yminn +=  velocity
-            ymin_level2 += velocity
+            yminn += velocity_y_step
+            ymin_level2 += velocity_y_step
             ### New min coords for interpolation ###
         
         ### Move Grid and update variables  ###
-        elif  movement_y == -1 and iii and velocity:  # means y-movement in - dir
+        elif  movement_y == -1 and iii and velocity_y_step:  # means y-movement in - dir
             ### Move the Laser Source ###
                 # y00 -= velocity
             ### Move the Laser Source ###
             
             ### Move Grid and update variables  ###
     
-                state.move_y(-velocity, iii)
+                y_step_mag = abs(float(velocity_y_step))
+                load_precompute_state(y_step_mag)
+                refresh_precompute_output_buffers()
+                state.move_y(-abs(velocity_y_step), iii)
                                                 
-                update_after_movementy2_negative(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_iny_negative, slice_1d_out=slice_1d_outy_negative, index_y=index_y_neg, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)                                                
-                update_after_movementy2_negative(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y_negative, slice_1d_out=slice_1d_out_level2y_negative, index_y=index_y_neg_level2, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)                                                      
-                update_after_movement_level3y_2_negative(x=d_x_lin, y=y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_liny_negative, slice_1d_out=slice_1d_out_liny_negative, index_y=index_y_lin_neg, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)            
+                update_after_movementy2_negative(x=d_x_s, y=y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx=nx_s, ny_in=ny_s_in, nz=nz_s, uin=u_in_s_y, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out, uout=d_uout_s_y, one=1, val3=u_s, slice_1d_in=slice_1d_iny_negative, slice_1d_out=slice_1d_outy_negative, index_y=index_y_neg, threads_per_block_in=threads_per_block_in_s_y, blocks_per_grid_in=blocks_per_grid_in_s_y, threads_per_block_out=threads_per_block_out_s_y , blocks_per_grid_out=blocks_per_grid_out_s_y)                                                
+                update_after_movementy2_negative(x=d_x_s_level2, y=y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx=nx_s_level2, ny_in=ny_s_in_level2, nz=nz_s_level2, uin=u_in_s_level2_y, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  ny_out=ny_s_out_level2, uout=d_uout_s_level2_y, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2y_negative, slice_1d_out=slice_1d_out_level2y_negative, index_y=index_y_neg_level2, threads_per_block_in=threads_per_block_in_s_level2_y, blocks_per_grid_in=blocks_per_grid_in_s_level2_y, threads_per_block_out=threads_per_block_out_s_level2_y , blocks_per_grid_out=blocks_per_grid_out_s_level2_y)                                                      
+                update_after_movement_level3y_2_negative(x=d_x_lin, y=y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx=nx_lin, ny_in=ny_lin_in, nz=nz_lin, uin=u_in_lin_y,  slice_1d_in=slice_1d_in_liny_negative, slice_1d_out=slice_1d_out_liny_negative, index_y=index_y_lin_neg, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_y , blocks_per_grid_in=blocks_per_grid_in_lin_y)            
     
     
                 ### Updated Laser Source ###
@@ -1158,30 +1220,33 @@ for layers in range(num_layers):
                 ### Updated Laser Source ###
                 
                 ### New old mins for update ###
-                yoldmin_s -= velocity
-                yoldmin_lin -= velocity
-                yoldmin_s_level2 -= velocity
+                yoldmin_s -= abs(velocity_y_step)
+                yoldmin_lin -= abs(velocity_y_step)
+                yoldmin_s_level2 -= abs(velocity_y_step)
                 ### New old mins for update ###
                 
                 ### New min coords for interpolation ###
-                yminn -=  velocity
-                ymin_level2 -= velocity
+                yminn -= abs(velocity_y_step)
+                ymin_level2 -= abs(velocity_y_step)
                 ### New min coords for interpolation ###
     
             
         ### Move Grid and update variables###
-        if movement_x == 1 and iii and velocity: # means x-movement in + dir
+        if movement_x == 1 and iii and velocity_x_step: # means x-movement in + dir
         ### Move the Laser Source ###
             # x00 += velocity
         ### Move the Laser Source ###
         
         ### Move Grid and update variables  ###
     
-            state.move_x(velocity, iii)
+            x_step_mag = abs(float(velocity_x_step))
+            load_precompute_state(x_step_mag)
+            refresh_precompute_output_buffers()
+            state.move_x(velocity_x_step, iii)
             
-            update_after_movementx2(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_inx, slice_1d_out=slice_1d_outx, index_x=index_x, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
-            update_after_movementx2(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x, slice_1d_out=slice_1d_out_level2x, index_x=index_x_level2, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
-            update_after_movement_level3x_2(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_linx, slice_1d_out=slice_1d_out_linx, index_x=index_x_lin, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
+            update_after_movementx2(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=u_in_s_x, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s_x, one=1, val3=u_s, slice_1d_in=slice_1d_inx, slice_1d_out=slice_1d_outx, index_x=index_x, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
+            update_after_movementx2(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=u_in_s_level2_x, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2_x, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x, slice_1d_out=slice_1d_out_level2x, index_x=index_x_level2, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
+            update_after_movement_level3x_2(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=u_in_lin_x,  slice_1d_in=slice_1d_in_linx, slice_1d_out=slice_1d_out_linx, index_x=index_x_lin, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
             
     
             ### Updated Laser Source ###
@@ -1191,28 +1256,31 @@ for layers in range(num_layers):
             ### Updated Laser Source ###
             
             ### New old mins for update ###
-            xoldmin_s += velocity
-            xoldmin_lin += velocity
-            xoldmin_s_level2 += velocity
+            xoldmin_s += velocity_x_step
+            xoldmin_lin += velocity_x_step
+            xoldmin_s_level2 += velocity_x_step
             ### New old mins for update ###
             
             ### New min coords for interpolation ###
-            xminn +=  velocity
-            xmin_level2 += velocity
+            xminn += velocity_x_step
+            xmin_level2 += velocity_x_step
             ### New min coords for interpolation ###
             
         ### Move Grid and update variables  ###
-        elif  movement_x == -1 and iii and velocity: # means x-movement in - dir
+        elif  movement_x == -1 and iii and velocity_x_step: # means x-movement in - dir
             ### Move the Laser Source ###
                 # x00 -= velocity
             ### Move the Laser Source ###
             
             ### Move Grid and update variables  ###
-                state.move_x(-velocity, iii)
+                x_step_mag = abs(float(velocity_x_step))
+                load_precompute_state(x_step_mag)
+                refresh_precompute_output_buffers()
+                state.move_x(-abs(velocity_x_step), iii)
                 
-                update_after_movementx2_negative(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=uin_s, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s, one=1, val3=u_s, slice_1d_in=slice_1d_inx_negative, slice_1d_out=slice_1d_outx_negative, index_x=index_x_neg, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
-                update_after_movementx2_negative(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=uin_s_level2, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x_negative, slice_1d_out=slice_1d_out_level2x_negative, index_x=index_x_neg_level2, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
-                update_after_movement_level3x_2_negative(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=uin_lin,  slice_1d_in=slice_1d_in_linx_negative, slice_1d_out=slice_1d_out_linx_negative, index_x=index_x_lin_neg, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
+                update_after_movementx2_negative(x=x_s, y=d_y_s, z=d_z_s, val=d_u_s, nx_old=nx_s, ny_old=ny_s, nz_old=nz_s, hxval=h_x_new, hyval=h_y_new, hzval=h_z_new, xoldmin=xoldmin_s, yoldmin=yoldmin_s, zoldmin=zoldmin_s,  nx_in=nx_s_in, ny=ny_s, nz=nz_s, uin=u_in_s_x, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out, uout=d_uout_s_x, one=1, val3=u_s, slice_1d_in=slice_1d_inx_negative, slice_1d_out=slice_1d_outx_negative, index_x=index_x_neg, threads_per_block_in=threads_per_block_in_s_x, blocks_per_grid_in=blocks_per_grid_in_s_x, threads_per_block_out=threads_per_block_out_s_x , blocks_per_grid_out=blocks_per_grid_out_s_x)
+                update_after_movementx2_negative(x=x_s_level2, y=d_y_s_level2, z=d_z_s_level2, val=d_u_s_level2, nx_old=nx_s_level2, ny_old=ny_s_level2, nz_old=nz_s_level2, hxval=h_x_new_level2, hyval=h_y_new_level2, hzval=h_z_new_level2, xoldmin=xoldmin_s_level2, yoldmin=yoldmin_s_level2, zoldmin=zoldmin_s_level2,  nx_in=nx_s_in_level2, ny=ny_s_level2, nz=nz_s_level2, uin=u_in_s_level2_x, val2=d_u_lin, nx_old2=nx_lin, ny_old2=ny_lin, nz_old2=nz_lin, hxval2=h_lin, hyval2=h_lin, hzval2=h_lin,  xold2min=xoldmin_lin, yold2min=yoldmin_lin, zold2min=zoldmin_lin,  nx_out=nx_s_out_level2, uout=d_uout_s_level2_x, one=1, val3=u_s_level2, slice_1d_in=slice_1d_in_level2x_negative, slice_1d_out=slice_1d_out_level2x_negative, index_x=index_x_neg_level2, threads_per_block_in=threads_per_block_in_s_level2_x, blocks_per_grid_in=blocks_per_grid_in_s_level2_x, threads_per_block_out=threads_per_block_out_s_level2_x , blocks_per_grid_out=blocks_per_grid_out_s_level2_x)
+                update_after_movement_level3x_2_negative(x=x_lin, y=d_y_lin, z=d_z_lin, val=d_u_lin, nx_old=nx_lin, ny_old=ny_lin, nz_old=nz_lin,  hxval=h_lin, hyval=h_lin, hzval=h_lin, xoldmin_lin=xoldmin_lin, yoldmin_lin=yoldmin_lin, zoldmin_lin=zoldmin_lin,  nx_in=nx_lin_in, ny=ny_lin,nz=nz_lin, uin=u_in_lin_x,  slice_1d_in=slice_1d_in_linx_negative, slice_1d_out=slice_1d_out_linx_negative, index_x=index_x_lin_neg, u0=u0 , one=1,  val3=u_lin, threads_per_block_in=threads_per_block_in_lin_x , blocks_per_grid_in=blocks_per_grid_in_lin_x)            
     
                 ### Updated Laser Source ###
                 qs_lin[:] = gaussian2d(X_lin, Y_lin, x_span, x00, y00)
@@ -1221,14 +1289,14 @@ for layers in range(num_layers):
                 ### Updated Laser Source ###
                 
                 ### New old mins for update ###
-                xoldmin_s -= velocity
-                xoldmin_lin -= velocity
-                xoldmin_s_level2 -= velocity
+                xoldmin_s -= abs(velocity_x_step)
+                xoldmin_lin -= abs(velocity_x_step)
+                xoldmin_s_level2 -= abs(velocity_x_step)
                 ### New old mins for update ###
                 
                 ### New min coords for interpolation ###
-                xminn -=  velocity
-                xmin_level2 -= velocity
+                xminn -= abs(velocity_x_step)
+                xmin_level2 -= abs(velocity_x_step)
                 ### New min coords for interpolation ###
     
     
@@ -1299,9 +1367,7 @@ for layers in range(num_layers):
                 u_s[:] = (1-w_lv1)*u_s + w_lv1*u_new_s
             u_s[:] = u_new_s.copy()
 
-        
 
-    
         
         if should_save_step( iii2, layers+1, iii):
             compute_G_and_R_gpu[blocks_per_grid_s_GR, threads_per_block_GR](u_s_old, u_s, nx_s, ny_s, nz_s,  dt_lin, h_x_new, h_y_new, h_z_new, 1e-12, G_gpu, R_gpu)
@@ -1315,7 +1381,7 @@ for layers in range(num_layers):
                 "R_flat": R_gpu,
             })
         iii2 += 1
-        x00, y00, movement_x, movement_y, Flag = stepper.advance(velocity)
+        x00, y00, velocity_x_step, velocity_y_step, movement_x, movement_y, Flag = stepper.advance(velocity)
 
         # iii += 1
   
@@ -1356,7 +1422,7 @@ for layers in range(num_layers):
             "R_flat": R_gpu,
         })
     
-    x00, y00, movement_x, movement_y, Flag = stepper.advance(velocity)
+    x00, y00, velocity_x_step, velocity_y_step, movement_x, movement_y, Flag = stepper.advance(velocity)
     if layers < num_layers-1:
         
         velocity = velocity0
@@ -1412,10 +1478,17 @@ for layers in range(num_layers):
         xminn = float_type(x_lin[0].get()); yminn = float_type(y_lin[0].get()); zminn = float_type(z_lin[0].get())
         xmin_level2 = float_type(x_s_level2[0].get()); ymin_level2 = float_type(y_s_level2[0].get()); zmin_level2 = float_type(z_s_level2[0].get())
         
-        uin_s_level2 =  cp.zeros_like(u_s_level2[slice_1d_in_level2y], dtype = float_type)
-        uout_s = cp.zeros_like(u_s[slice_1d_outy], dtype = float_type)
-        uout_s_level2 = cp.zeros_like(u_s_level2[slice_1d_out_level2y], dtype = float_type)
-        uin_lin =  cp.zeros_like(u_lin[slice_1d_in_liny], dtype = float_type)
+        u_in_s_y = cp.zeros_like(u_s[slice_1d_iny], dtype = float_type)
+        u_in_s_level2_y =  cp.zeros_like(u_s_level2[slice_1d_in_level2y], dtype = float_type)
+        u_out_s_y = cp.zeros_like(u_s[slice_1d_outy], dtype = float_type)
+        u_out_s_level2_y = cp.zeros_like(u_s_level2[slice_1d_out_level2y], dtype = float_type)
+        u_in_lin_y =  cp.zeros_like(u_lin[slice_1d_in_liny], dtype = float_type)
+        u_in_s_x = cp.zeros_like(u_s[slice_1d_inx], dtype = float_type)
+        u_out_s_x = cp.zeros_like(u_s[slice_1d_outx], dtype = float_type)
+        u_in_s_level2_x = cp.zeros_like(u_s_level2[slice_1d_in_level2x], dtype = float_type)
+        u_out_s_level2_x = cp.zeros_like(u_s_level2[slice_1d_out_level2x], dtype = float_type)
+        u_in_lin_x = cp.zeros_like(u_lin[slice_1d_in_linx], dtype = float_type)
+        u_out_lin_x = cp.zeros_like(u_lin[slice_1d_out_linx], dtype = float_type)
     
         ny_lin_in = int(y_lin[0:index_y_lin].shape[0])
         ny_s_in  = int(y_s[0:index_y].shape[0])
@@ -1504,11 +1577,10 @@ for layers in range(num_layers):
         d_y_s2_level2 = cuda.to_device(y_s2_level2)
         d_z_s2_level2 = cuda.to_device(z_s2_level2)
 
-        d_uout_s = cuda.to_device(uout_s)
-        d_uout_s_level2 = cuda.to_device(uout_s_level2)
-
-        d_uin_s = cuda.to_device(uin_s)
-        d_uin_s_level2 = cuda.to_device(uin_s_level2)
+        d_uout_s_y = cuda.to_device(u_out_s_y)
+        d_uout_s_level2_y = cuda.to_device(u_out_s_level2_y)
+        d_uout_s_x = cuda.to_device(u_out_s_x)
+        d_uout_s_level2_x = cuda.to_device(u_out_s_level2_x)
 
         d_u_s_level2_old = cuda.to_device(u_s_level2_old)
         d_u_s_old = cuda.to_device(u_s_old)
@@ -1582,12 +1654,6 @@ for layers in range(num_layers):
                 break     
     ### Let it cool for balance ###
     
-
-
-
-
-
-
 
 
 
