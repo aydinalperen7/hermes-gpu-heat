@@ -1301,8 +1301,8 @@ for layers in range(num_layers):
     
     
         
-        u_s_old[:] = u_s.copy()
-        u_s_level2_old[:] = u_s_level2.copy()
+        u_s_old[:] = u_s
+        u_s_level2_old[:] = u_s_level2
     
     
     
@@ -1317,7 +1317,7 @@ for layers in range(num_layers):
         ### Solve the 3rd Level ###
         rhs_level3_dirichlet[blocks_per_grid_lin, threads_per_block_lin](nx_lin, ny_lin, nz_lin,u_lin, qs_lin, b_lin, h_linisq, h_linisq, h_linisq, n2, n3, dt_lin05, u0, h_lin)    
         u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, cg_tol_level1, Mlinear_lin, maxit=cg_max_iter_level1)
-        u_lin[:] = u_new_lin.copy()
+        u_lin[:] = u_new_lin
         ### Solve the 3rd Level ###
         
     
@@ -1349,7 +1349,7 @@ for layers in range(num_layers):
         extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4]( nx_s, ny_s, d_uinteold, d_p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
         ### Exract BC from previous time step for Level 1 ###
         
-        u_s_level2[:] = u_new_s_level2.copy()
+        u_s_level2[:] = u_new_s_level2
         
         ### Exract BC from current time step for Level 1 ###
         trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](d_x_s2, d_y_s2, d_z_s2, d_u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinte, 1)
@@ -1365,7 +1365,7 @@ for layers in range(num_layers):
     
             if nl_lv1 != nl_lv1-1:
                 u_s[:] = (1-w_lv1)*u_s + w_lv1*u_new_s
-            u_s[:] = u_new_s.copy()
+            u_s[:] = u_new_s
 
 
         
@@ -1597,8 +1597,8 @@ for layers in range(num_layers):
     
             ttt += dt_lin*phys.time_scale*1e3
             
-            u_s_level2_old[:] = u_s_level2.copy()
-            u_s_old[:] = u_s.copy()
+            u_s_level2_old[:] = u_s_level2
+            u_s_old[:] = u_s
     
     
             
@@ -1612,7 +1612,7 @@ for layers in range(num_layers):
             ### Solve the 3rd Level ###
             rhs_level3_dirichlet[blocks_per_grid_lin, threads_per_block_lin]( nx_lin, ny_lin, nz_lin, d_u_lin, d_qs_lin, d_b_lin, h_linisq, h_linisq, h_linisq, n2, n3, dt_lin05, u0, h_lin)
             u_new_lin,stat,num_iter = sparse_cg(Alinear_lin, b_lin, u_lin, cg_tol_level1, None, maxit=cg_max_iter_level1)
-            u_lin[:] = u_new_lin.copy()
+            u_lin[:] = u_new_lin
             ### Solve the 3rd Level ###
             
             ### Exract BC from current time step for Level 2 ###
@@ -1635,7 +1635,7 @@ for layers in range(num_layers):
             extract_neumann_bc_b[blocks_per_grid_s_bc4, threads_per_block_bc4]( nx_s, ny_s, uinteold,  p_b_old, slice_bc_bottom0_1d, nx_s2, ny_s2)
             ### Exract BC from previous time step for Level 1 ###
             
-            u_s_level2[:] = u_new_s_level2.copy()
+            u_s_level2[:] = u_new_s_level2
             
             ### Exract BC from current time step for Level 1 ###
             trilinear_interpolation[blocks_per_grid_s_int2, threads_per_block_int2](x_s2, y_s2, z_s2, d_u_s_level2, nx_s_level2, ny_s_level2, nz_s_level2, h_x_new_level2, h_y_new_level2, h_z_new_level2, xmin_level2, ymin_level2, zmin_level2, nx_s2, ny_s2, nz_s2, d_uinte, 1)
@@ -1647,7 +1647,7 @@ for layers in range(num_layers):
             ### Solve the 1st Level ###
             rhs_level12_neumann[blocks_per_grid_s, threads_per_block_s](nx_s, ny_s, nz_s, d_u_s_old,  d_qs_s, d_b_s, h_ix_newsq, h_iy_newsq, h_iz_newsq, iSte, n2, n3, dt_lin05, d_p_o, d_p_i, d_p_r, d_p_l, d_p_b, d_p_o_old, d_p_i_old, d_p_r_old, d_p_l_old, d_p_b_old, d_u_s, h_z_new, n4, n5, n6)
             u_new_s,stat,num_iter = sparse_cg(Alinear_s, b_s, u_s, cg_tol_level3, None, maxit=cg_max_iter_level3)
-            u_s[:] = u_new_s.copy()          
+            u_s[:] = u_new_s         
             ### Solve the 1st Level ###
             
             if iii == 100:
