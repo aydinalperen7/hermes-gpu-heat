@@ -1,8 +1,6 @@
 import cupy as cp
 from typing import Dict, Any
-from hermes.kernels.interp import trilinear_interpolation 
-
-
+from hermes.kernels.interp import trilinear_interpolation_3d
 
 __all__ = [
     "Index_3D_to_1D",
@@ -121,15 +119,31 @@ def precompute_for_update(
     yoldmin = float_type(y[0].get())
     zoldmin = float_type(z[0].get())
 
-    tpbin  = 128
-    tpbout = 128
-    blocks_in_y  = (nx * ny_in  * nz + (tpbin -1)) // tpbin
-    blocks_out_y = (nx * ny_out * nz + (tpbout-1)) // tpbout
+    tpbin = (8, 4, 4)
+    tpbout = (8, 4, 4)
+    blocks_in_y = (
+        (nx + tpbin[0] - 1) // tpbin[0],
+        (ny_in + tpbin[1] - 1) // tpbin[1],
+        (nz + tpbin[2] - 1) // tpbin[2],
+    )
+    blocks_out_y = (
+        (nx + tpbout[0] - 1) // tpbout[0],
+        (ny_out + tpbout[1] - 1) // tpbout[1],
+        (nz + tpbout[2] - 1) // tpbout[2],
+    )
 
-    tpbin_x  = 128
-    tpbout_x = 128
-    blocks_in_x  = (nx_in  * ny * nz + (tpbin_x -1)) // tpbin_x
-    blocks_out_x = (nx_out * ny * nz + (tpbout_x-1)) // tpbout_x
+    tpbin_x = (8, 4, 4)
+    tpbout_x = (8, 4, 4)
+    blocks_in_x = (
+        (nx_in + tpbin_x[0] - 1) // tpbin_x[0],
+        (ny + tpbin_x[1] - 1) // tpbin_x[1],
+        (nz + tpbin_x[2] - 1) // tpbin_x[2],
+    )
+    blocks_out_x = (
+        (nx_out + tpbout_x[0] - 1) // tpbout_x[0],
+        (ny + tpbout_x[1] - 1) // tpbout_x[1],
+        (nz + tpbout_x[2] - 1) // tpbout_x[2],
+    )
 
     return dict(
         u_inx=u_inx, u_outx=u_outx,
@@ -164,8 +178,8 @@ def update_after_movementy2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, 
     yin = y[0:index_y]
     yout = y[index_y:]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)
-    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)
     
 
     val3[slice_1d_in] = uin
@@ -188,8 +202,8 @@ def update_after_movementy2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval
     yin = y[index_y:]
     yout = y[0:index_y]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)
-    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin, yoldmin, zoldmin, nx, ny_in, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_out, threads_per_block_out](x, yout, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx, ny_out, nz, uout, one)
     
 
     val3[slice_1d_in] = uin
@@ -214,8 +228,8 @@ def update_after_movementx2(x, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, 
     xin = x[0:index_x]
     xout = x[index_x:]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)    
-    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)
     
 
     val3[slice_1d_in] = uin
@@ -238,8 +252,8 @@ def update_after_movementx2_negative(x, y, z, val, nx_old, ny_old, nz_old, hxval
     xin = x[index_x:]
     xout = x[0:index_x]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)    
-    trilinear_interpolation[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval,xoldmin, yoldmin, zoldmin, nx_in, ny, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_out, threads_per_block_out](xout, y, z, val2, nx_old2, ny_old2, nz_old2, hxval2, hyval2, hzval2, xold2min, yold2min, zold2min, nx_out, ny, nz, uout, one)
     
 
     val3[slice_1d_in] = uin
@@ -257,7 +271,7 @@ def update_after_movement_level3y_2(x, y, z, val, nx_old, ny_old, nz_old, hxval,
     
     yin = y[0:index_y]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)
 
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = u0
@@ -274,7 +288,7 @@ def update_after_movement_level3y_2_negative(x, y, z, val, nx_old, ny_old, nz_ol
     
     yin = y[index_y:]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](x, yin, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx, ny_in, nz, uin, one)
 
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = u0
@@ -290,7 +304,7 @@ def update_after_movement_level3x_2(x, y, z, val, nx_old, ny_old, nz_old, hxval,
     
     xin = x[0:index_x]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)
 
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = u0
@@ -306,7 +320,7 @@ def update_after_movement_level3x_2_negative(x, y, z, val, nx_old, ny_old, nz_ol
     
     xin = x[index_x:]
 
-    trilinear_interpolation[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)
+    trilinear_interpolation_3d[blocks_per_grid_in, threads_per_block_in](xin, y, z, val, nx_old, ny_old, nz_old, hxval, hyval, hzval, xoldmin_lin, yoldmin_lin, zoldmin_lin, nx_in, ny, nz, uin, one)
 
     val3[slice_1d_in] = uin
     val3[slice_1d_out] = u0
