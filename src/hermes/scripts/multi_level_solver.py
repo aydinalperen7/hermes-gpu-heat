@@ -8,6 +8,7 @@ import cupy as cp
 import cupyx.scipy.sparse.linalg as cspla
 from numba import cuda
 import argparse
+from collections import OrderedDict
 
 from hermes.physics.material import phys_parameter
 from hermes.grids.sim_params import init_level3_outer
@@ -878,7 +879,8 @@ kernels = Kernels(grid_movement_index, precompute_for_update)
 pre = GridUpdater(level1, level2, lin, kernels, float_type=float_type, t_len=target_step)
 
 # Cache precompute states keyed by actual step magnitude to make switch between distinct |vx| / |vy| easier
-pre_state_cache = {}
+HERMES_PRESTATE_CACHE_MAX = 32
+pre_state_cache = OrderedDict()
 _DYNAMIC_MOVEMENT_STATE_NAMES = (
     "xoldmin_s", "yoldmin_s", "zoldmin_s",
     "xoldmin_s_level2", "yoldmin_s_level2", "zoldmin_s_level2",
@@ -890,20 +892,29 @@ _DYNAMIC_MOVEMENT_STATE_NAMES = (
 def load_precompute_state(step_mag):
     if step_mag <= 0:
         return
-    key = round(float(step_mag), 15)
-    cached = pre_state_cache.get(key)
-    if cached is None:
-        pre.update(step_mag)
-        cached = dict(pre.as_globals())
+    try:
+        key = round(float(step_mag), 15)
+        cached = pre_state_cache.pop(key, None)
+        if cached is None:
+            pre.update(step_mag)
+            cached = dict(pre.as_globals())
         pre_state_cache[key] = cached
-    dynamic_state = {}
-    g = globals()
-    for name in _DYNAMIC_MOVEMENT_STATE_NAMES:
-        if name in g:
-            dynamic_state[name] = g[name]
-    globals().update(cached)
-    if dynamic_state:
-        globals().update(dynamic_state)
+        if len(pre_state_cache) > HERMES_PRESTATE_CACHE_MAX:
+            pre_state_cache.popitem(last=False)
+        dynamic_state = {}
+        g = globals()
+        for name in _DYNAMIC_MOVEMENT_STATE_NAMES:
+            if name in g:
+                dynamic_state[name] = g[name]
+        globals().update(cached)
+        if dynamic_state:
+            globals().update(dynamic_state)
+    except Exception:
+        print(
+            "[WARN] load_precompute_state failed. If this is memory-related, "
+            "change HERMES_PRESTATE_CACHE_MAX=32 in this script."
+        )
+        raise
 
 def refresh_precompute_output_buffers():
     global d_uout_s_y, d_uout_s_level2_y, d_uout_s_x, d_uout_s_level2_x
