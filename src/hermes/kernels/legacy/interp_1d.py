@@ -2,7 +2,7 @@ from numba import cuda
 
 
 @cuda.jit
-def trilinear_interpolation_3d(
+def trilinear_interpolation(
     x_new,
     y_new,
     z_new,
@@ -22,12 +22,13 @@ def trilinear_interpolation_3d(
     result,
     one,
 ):
-    i_new = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j_new = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    k_new = cuda.blockIdx.z * cuda.blockDim.z + cuda.threadIdx.z
-
-    if i_new >= nx_new or j_new >= ny_new or k_new >= nz_new:
+    ika = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if ika >= nx_new * ny_new * nz_new:
         return
+
+    i_new = ika % nx_new
+    j_new = (ika // nx_new) % ny_new
+    k_new = ika // (nx_new * ny_new)
 
     x = x_new[i_new]
     y = y_new[j_new]
@@ -53,7 +54,6 @@ def trilinear_interpolation_3d(
         dz_frac = one_val
 
     base = i + j * nx_old + k * nx_old * ny_old
-    result_idx = i_new + j_new * nx_new + k_new * nx_new * ny_new
 
     c000 = u_old[base] * (one_val - dx_frac) * (one_val - dy_frac) * (one_val - dz_frac)
     c100 = u_old[base + 1] * dx_frac * (one_val - dy_frac) * (one_val - dz_frac)
@@ -64,4 +64,4 @@ def trilinear_interpolation_3d(
     c011 = u_old[base + nx_old * ny_old + nx_old] * (one_val - dx_frac) * dy_frac * dz_frac
     c111 = u_old[base + nx_old * ny_old + nx_old + 1] * dx_frac * dy_frac * dz_frac
 
-    result[result_idx] = c000 + c001 + c010 + c011 + c100 + c101 + c110 + c111
+    result[ika] = c000 + c001 + c010 + c011 + c100 + c101 + c110 + c111

@@ -2,7 +2,7 @@ from numba import cuda
 
 
 @cuda.jit
-def extract_neumann_bc_r_l_i_o_3d(
+def extract_neumann_bc_r_l_i_o(
     nx,
     ny,
     nz,
@@ -17,17 +17,15 @@ def extract_neumann_bc_r_l_i_o_3d(
     slice_bc_left0_1d,
     nx2,
 ):
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    k = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    if i >= nx or k >= nz:
+    indxx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if indxx >= nx * nz:
         return
-
-    indxx = i + k * nx
 
     index1_out = slice_bc_out0_1d[indxx]
     index2_out = index1_out + 2
     index1_in = slice_bc_in0_1d[indxx]
     index2_in = index1_in + 2
+
     out_bc[indxx] = vals[index2_out] - vals[index1_out]
     in_bc[indxx] = vals[index2_in] - vals[index1_in]
 
@@ -35,12 +33,13 @@ def extract_neumann_bc_r_l_i_o_3d(
     index2_right = index1_right + 2 * nx2
     index1_left = slice_bc_left0_1d[indxx]
     index2_left = index1_left + 2 * nx2
+
     right_bc[indxx] = vals[index2_right] - vals[index1_right]
     left_bc[indxx] = vals[index2_left] - vals[index1_left]
 
 
 @cuda.jit
-def extract_neumann_bc_b_3d(
+def extract_neumann_bc_b(
     nx,
     ny,
     vals,
@@ -49,12 +48,10 @@ def extract_neumann_bc_b_3d(
     nx2,
     ny2,
 ):
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    if i >= nx or j >= ny:
+    indxx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if indxx >= nx * ny:
         return
 
-    indxx = i + j * nx
     index1 = slice_bc_bottom0_1d[indxx]
     index2 = index1 + 2 * nx2 * ny2
     bottom_bc[indxx] = vals[index2] - vals[index1]

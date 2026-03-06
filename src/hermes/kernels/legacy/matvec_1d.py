@@ -3,24 +3,27 @@ from math import sin, pi
 
 
 @cuda.jit
-def mv_level3_dirichlet_3d(
-    nx, ny, nz,
-    v, result,
-    hixsq, hiysq, hizsq,
+def mv_level3_dirichlet(
+    nx,
+    ny,
+    nz,
+    v,
+    result,
+    hixsq,
+    hiysq,
+    hizsq,
     dt05,
     n2,
-    u0,  # unused, kept for call-site parity
+    u0,
     hz,
 ):
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    k = cuda.blockIdx.z * cuda.blockDim.z + cuda.threadIdx.z
-
-    if i >= nx or j >= ny or k >= nz:
+    idxx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if idxx >= nx * ny * nz:
         return
 
-    nxny = nx * ny
-    idxx = i + j * nx + k * nxny
+    i = idxx % nx
+    j = (idxx // nx) % ny
+    k = idxx // (nx * ny)
 
     if i == 0 or i == nx - 1 or j == 0 or j == ny - 1 or k == 0:
         result[idxx] = v[idxx]
@@ -30,8 +33,8 @@ def mv_level3_dirichlet_3d(
     I = idxx - 1
     R = idxx + nx
     L = idxx - nx
-    T = idxx + nxny
-    B = idxx - nxny
+    T = idxx + nx * ny
+    B = idxx - nx * ny
 
     uC = v[idxx]
     uI = v[I]
@@ -50,32 +53,35 @@ def mv_level3_dirichlet_3d(
 
 
 @cuda.jit
-def mv_level12_neumann_3d(
-    nx, ny, nz,
-    v, result,
-    hixsq, hiysq, hizsq,
+def mv_level12_neumann(
+    nx,
+    ny,
+    nz,
+    v,
+    result,
+    hixsq,
+    hiysq,
+    hizsq,
     dt05,
     n2,
     iSte,
     u_phase,
     hz,
 ):
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    k = cuda.blockIdx.z * cuda.blockDim.z + cuda.threadIdx.z
-
-    if i >= nx or j >= ny or k >= nz:
+    idxx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if idxx >= nx * ny * nz:
         return
 
-    nxny = nx * ny
-    idxx = i + j * nx + k * nxny
+    i = idxx % nx
+    j = (idxx // nx) % ny
+    k = idxx // (nx * ny)
 
     O = idxx + 1
     I = idxx - 1
     R = idxx + nx
     L = idxx - nx
-    T = idxx + nxny
-    B = idxx - nxny
+    T = idxx + nx * ny
+    B = idxx - nx * ny
     vC = v[idxx]
 
     if (0 < i < nx - 1) and (0 < j < ny - 1) and (0 < k < nz - 1):
@@ -120,9 +126,9 @@ def mv_level12_neumann_3d(
     dy = -(uR + uL) * hiysq * dt05
     dz = -(uT + uB) * hizsq * dt05
 
-    phi = u_phase[idxx]
-    p1 = (2.0 * vC * (hixsq + hiysq + hizsq)) * dt05 + vC
-    if (phi > 0.0) and (phi < 1.0):
-        p1 += 0.5 * pi * iSte * sin(pi * phi) * vC
+    if (u_phase[idxx] > 0.0) and (u_phase[idxx] < 1.0):
+        p1 = (2.0 * vC * (hixsq + hiysq + hizsq)) * dt05 + vC + (0.5 * pi * iSte * sin(pi * u_phase[idxx]) * vC)
+    else:
+        p1 = (2.0 * vC * (hixsq + hiysq + hizsq)) * dt05 + vC
 
     result[idxx] = dx + dy + dz + p1

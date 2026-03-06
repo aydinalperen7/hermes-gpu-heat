@@ -1,9 +1,10 @@
 from numba import cuda
 from math import sin, pi
+import numpy as np
 
 
 @cuda.jit
-def rhs_level3_dirichlet_3d(
+def rhs_level3_dirichlet(
     nx,
     ny,
     nz,
@@ -19,15 +20,13 @@ def rhs_level3_dirichlet_3d(
     u0,
     hz,
 ):
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    k = cuda.blockIdx.z * cuda.blockDim.z + cuda.threadIdx.z
-
-    if i >= nx or j >= ny or k >= nz:
+    idxx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if idxx >= nx * ny * nz:
         return
 
-    nxny = nx * ny
-    idxx = i + j * nx + k * nxny
+    i = idxx % nx
+    j = (idxx // nx) % ny
+    k = idxx // (nx * ny)
 
     if i == 0 or i == nx - 1 or j == 0 or j == ny - 1 or k == 0:
         b[idxx] = u0
@@ -37,8 +36,8 @@ def rhs_level3_dirichlet_3d(
     I = idxx - 1
     R = idxx + nx
     L = idxx - nx
-    T = idxx + nxny
-    B = idxx - nxny
+    T = idxx + nx * ny
+    B = idxx - nx * ny
 
     uC = u[idxx]
     uI = u[I]
@@ -46,7 +45,9 @@ def rhs_level3_dirichlet_3d(
     uR = u[R]
     uL = u[L]
     uB = u[B]
-    uT = u[T] if k < nz - 1 else (uB + (4.0 * hz * (qs[i, j] - n2 * n3)) - (2.0 * hz * n2 * uC))
+    four = 4.0
+    two = 2.0
+    uT = u[T] if k < nz - 1 else (uB + (four * hz * (qs[i, j] - n2 * n3)) - (two * hz * n2 * uC))
 
     dx = (uI + uO) * hixsq * dt05
     dy = (uR + uL) * hiysq * dt05
@@ -56,7 +57,7 @@ def rhs_level3_dirichlet_3d(
 
 
 @cuda.jit
-def rhs_level12_neumann_3d(
+def rhs_level12_neumann(
     nx,
     ny,
     nz,
@@ -86,22 +87,20 @@ def rhs_level12_neumann_3d(
     n5,
     n6,
 ):
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    k = cuda.blockIdx.z * cuda.blockDim.z + cuda.threadIdx.z
-
-    if i >= nx or j >= ny or k >= nz:
+    idxx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    if idxx >= nx * ny * nz:
         return
 
-    nxny = nx * ny
-    idxx = i + j * nx + k * nxny
+    i = idxx % nx
+    j = (idxx // nx) % ny
+    k = idxx // (nx * ny)
 
     O = idxx + 1
     I = idxx - 1
     R = idxx + nx
     L = idxx - nx
-    T = idxx + nxny
-    B = idxx - nxny
+    T = idxx + nx * ny
+    B = idxx - nx * ny
 
     uC = u[idxx]
 
@@ -115,8 +114,10 @@ def rhs_level12_neumann_3d(
     else:
         if k == nz - 1:
             qs2 = qs[i, j]
+            four = 4.0
+            two = 2.0
             uB = u[B]
-            uT = uB + (4.0 * hz * (qs2 - n2 * n3)) - (2.0 * hz * n2 * uC) - 4.0 * hz * n4 * ((u[idxx] + n5) ** 4 - n6**4)
+            uT = uB + (four * hz * (qs2 - n2 * n3)) - (two * hz * n2 * uC) - 4 * hz * n4 * ((u[idxx] + n5) ** 4 - n6**4)
         elif k == 0:
             uT = u[T]
             bc_idx = j * nx + i
@@ -154,7 +155,7 @@ def rhs_level12_neumann_3d(
     dz = (uT + uB) * hizsq * dt05
 
     if (u_non_lin[idxx] > 0.0) and (u_non_lin[idxx] < 1.0):
-        p1 = -(2.0 * uC * (hixsq + hiysq + hizsq)) * dt05 + uC + (0.5 * pi * iSte * sin(pi * u_non_lin[idxx]) * uC)
+        p1 = -(2.0 * uC * (hixsq + hiysq + hizsq)) * dt05 + uC + (0.5 * pi * (iSte) * np.sin(pi * u_non_lin[idxx]) * uC)
     else:
         p1 = -(2.0 * uC * (hixsq + hiysq + hizsq)) * dt05 + uC
 
